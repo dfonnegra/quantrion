@@ -4,12 +4,29 @@ version = "0.1.0"
 description = ""
 authors = ["Daniel Fonnegra <dfonnegrag@gmail.com>"]
 
+[tool.poetry.scripts]
+quantrion = "quantrion.main:run"
+
 [tool.poetry.dependencies]
 python = "^3.9"
+numpy = "^1.23.2"
+alpaca-py = "^0.5.4"
+jupyter = "^1.0.0"
+python-dotenv = "^0.20.0"
+httpx = "^0.23.0"
 
 [tool.poetry.dev-dependencies]
-pytest = "^5.2"
+pytest = "^7.1.2"
+pytest-cov = "^3.0.0"
+pytest-asyncio = "^0.19.0"
+pytest-httpx = "^0.21.0"
+black = "^22.6.0"
+isort = "^5.10.1"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.isort]
+profile = 'black'
+multi_line_output = 3
