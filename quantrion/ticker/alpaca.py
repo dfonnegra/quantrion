@@ -1,6 +1,6 @@
 import asyncio
-from datetime import datetime, timedelta
 import json
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from urllib.parse import urljoin
 
@@ -9,12 +9,11 @@ import pandas as pd
 import pytz
 import websockets
 
-
 from .. import settings
-from ..utils import SingletonMeta, retry_request, MarketDatetime as mdt
-from .ticker import Ticker
+from ..utils import MarketDatetime as mdt
+from ..utils import SingletonMeta, retry_request
 from .fixtures import BarsFixture
-
+from .ticker import Ticker
 
 FIELDS_TO_NAMES = {
     "t": "start",
@@ -43,7 +42,6 @@ def _data_to_df(data: List[dict]) -> pd.DataFrame:
 class AlpacaWebSocket(metaclass=SingletonMeta):
     def __init__(self) -> None:
         self._socket = None
-        self._cancelled = False
         self._task = None
         self._subscribed: Dict[str, AlpacaTicker] = dict()
 
@@ -67,9 +65,6 @@ class AlpacaWebSocket(metaclass=SingletonMeta):
     async def start(self):
         async for sock in websockets.connect(settings.ALPACA_STREAMING_URL):
             self._socket = sock
-            if self._cancelled:
-                await sock.close()
-                break
             try:
                 await sock.send(
                     json.dumps(
