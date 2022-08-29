@@ -1,4 +1,5 @@
-from abc import ABC, ABCMeta
+from abc import ABC, ABCMeta, abstractmethod
+from typing import List
 
 
 class TickerMeta(ABCMeta):
@@ -28,3 +29,15 @@ class Ticker(ABC, metaclass=TickerMeta):
         symbol: str,
     ) -> None:
         self._symbol = symbol
+
+    def __str__(self) -> str:
+        return f"{self.__class__.__name__}(symbol={self.symbol})"
+
+    def __repr__(self) -> str:
+        return str(self)
+
+
+class TickerListProvider(ABC):
+    @abstractmethod
+    async def list_tickers(self) -> List[str]:
+        pass

@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
@@ -13,9 +14,9 @@ from .. import settings
 from ..utils import MarketDatetime as mdt
 from ..utils import SingletonMeta, retry_request
 from .fixtures import BarsFixture
-from .ticker import Ticker
+from .ticker import Ticker, TickerListProvider
 
-FIELDS_TO_NAMES = {
+BAR_FIELDS_TO_NAMES = {
     "t": "start",
     "o": "open",
     "h": "high",
@@ -27,14 +28,14 @@ FIELDS_TO_NAMES = {
 }
 
 
-def _data_to_df(data: List[dict]) -> pd.DataFrame:
+def _data_to_df(data: List[dict], field_to_names: Dict[str, str]) -> pd.DataFrame:
     if len(data) == 0:
-        columns = set(FIELDS_TO_NAMES.values())
+        columns = set(field_to_names.values())
         columns.remove("start")
         return pd.DataFrame(
             columns=columns, index=pd.DatetimeIndex([], tz=mdt.market_tz)
         )
-    df = pd.DataFrame(data).rename(columns=FIELDS_TO_NAMES)
+    df = pd.DataFrame(data).rename(columns=field_to_names)
     df["start"] = pd.to_datetime(df["start"].values).tz_convert(mdt.market_tz)
     return df.set_index("start")
 
@@ -82,9 +83,10 @@ class AlpacaWebSocket(metaclass=SingletonMeta):
                     for data in messages:
                         if (symbol := data.get("S")) is None:
                             continue
-                        df = _data_to_df([data])
+                        df = _data_to_df([data], BAR_FIELDS_TO_NAMES)
                         self._subscribed[symbol].add_bars(df)
             except websockets.ConnectionClosed:
+                print("authenticating!")
                 continue
 
 
@@ -111,17 +113,13 @@ class AlpacaTicker(Ticker, BarsFixture):
         response.raise_for_status()
         return response
 
-    async def _retrieve_bars(
-        self, start: datetime, end: Optional[datetime] = None
-    ) -> pd.DataFrame:
-        default_end = mdt.now()
-        if settings.DEBUG:
-            default_end -= timedelta(minutes=15)
-        start = pd.Timestamp(start).ceil(settings.DEFAULT_TIMEFRAME)
-        end = default_end if end is None else end
-        end = pd.Timestamp(end).floor(settings.DEFAULT_TIMEFRAME)
+    async def _retrieve_bars(self, start: datetime, end: datetime) -> pd.DataFrame:
+        dt = mdt.now() - end
+        dt_min = timedelta(minutes=15)
+        if settings.DEBUG and dt < dt_min:
+            end = pd.Timestamp(end).floor(settings.DEFAULT_TIMEFRAME) - dt_min
         if start >= end:
-            return _data_to_df([])
+            return _data_to_df([], BAR_FIELDS_TO_NAMES)
         async with httpx.AsyncClient() as client:
             url = urljoin(settings.ALPACA_DATA_URL, f"/v2/stocks/{self.symbol}/bars")
             headers = {
@@ -144,8 +142,36 @@ class AlpacaTicker(Ticker, BarsFixture):
                 )
                 data = response.json()
                 rows.extend(data.get("bars", []))
-            return _data_to_df(rows)
+            return _data_to_df(rows, BAR_FIELDS_TO_NAMES)
 
     async def _subscribe_bars(self) -> None:
         ws = AlpacaWebSocket()
         await ws.subscribe(self)
+
+
+class AlpacaTickerListProvider(TickerListProvider, metaclass=SingletonMeta):
+    def __init__(self) -> None:
+        self._cache = None
+        super().__init__()
+
+    async def list_tickers(self) -> List[str]:
+        if self._cache is not None:
+            return self._cache
+        async with httpx.AsyncClient() as client:
+            url = urljoin(settings.ALPACA_TRADING_URL, f"/v2/assets")
+            headers = {
+                "APCA-API-KEY-ID": settings.ALPACA_API_KEY_ID,
+                "APCA-API-SECRET-KEY": settings.ALPACA_API_KEY_SECRET,
+            }
+            params = {"status": "active", "asset_class": "us_equity"}
+            response = await retry_request(
+                client, "get", url, params=params, headers=headers
+            )
+            response.raise_for_status()
+            result = [
+                AlpacaTicker(symbol=asset["symbol"])
+                for asset in response.json()
+                if asset["tradable"] and asset["fractionable"]
+            ]
+            self._cache = result
+            return result

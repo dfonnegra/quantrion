@@ -11,7 +11,7 @@ from httpx import RequestError
 from pytest_httpx import HTTPXMock
 
 from quantrion import settings
-from quantrion.ticker.alpaca import FIELDS_TO_NAMES, AlpacaTicker, AlpacaWebSocket
+from quantrion.ticker.alpaca import BAR_FIELDS_TO_NAMES, AlpacaTicker, AlpacaWebSocket
 from quantrion.utils import MarketDatetime as mdt
 
 
@@ -78,7 +78,7 @@ async def test_get_bars_no_end(httpx_mock: HTTPXMock):
         },
     )
     expected_bars = [
-        {FIELDS_TO_NAMES[key]: value for key, value in bar.items() if key != "t"}
+        {BAR_FIELDS_TO_NAMES[key]: value for key, value in bar.items() if key != "t"}
         for bar in expected_bars
     ]
     bars = await ticker.get_bars(now)
@@ -99,8 +99,9 @@ async def test_get_bars_update(httpx_mock: HTTPXMock):
             "bars": bars1,
         },
     )
-    url = get_bars_url("AAPL", end1)
-    bars2 = generate_bars(end1)
+    result = await ticker.get_bars(start1, end1)
+    url = get_bars_url("AAPL", result.index[-1])
+    bars2 = generate_bars(result.index[-1])
     httpx_mock.add_response(
         url=url,
         json={
@@ -130,24 +131,25 @@ async def test_get_bars_update_past(httpx_mock: HTTPXMock):
             "bars": bars1,
         },
     )
-    url = get_bars_url("AAPL", start2, start1)
-    bars2 = generate_bars(start2, start1)
+    result = await ticker.get_bars(start1, end1)
+    url = get_bars_url("AAPL", start2, result.index[0])
+    bars2 = generate_bars(start2, result.index[0])
     httpx_mock.add_response(
         url=url,
         json={
             "bars": bars2,
         },
     )
-    url = get_bars_url("AAPL", end1)
-    bars3 = generate_bars(end1)
+    url = get_bars_url("AAPL", result.index[-1])
+    bars3 = generate_bars(result.index[-1])
     httpx_mock.add_response(
         url=url,
         json={
             "bars": bars3,
         },
     )
-    await ticker.get_bars(start1, end1)
     await ticker.get_bars(start2)
+
     actual_bars = await ticker.get_bars(start2, start1)
     assert actual_bars.shape[0] == 24 * 60
     assert actual_bars.index[0] == pd.Timestamp(start2).ceil(settings.DEFAULT_TIMEFRAME)
@@ -175,7 +177,7 @@ async def test_get_bars_next_token(httpx_mock: HTTPXMock):
         },
     )
     expected_bars = [
-        {FIELDS_TO_NAMES[key]: value for key, value in bar.items() if key != "t"}
+        {BAR_FIELDS_TO_NAMES[key]: value for key, value in bar.items() if key != "t"}
         for bar in expected_bars
     ]
     bars = await ticker.get_bars(start)
@@ -211,7 +213,7 @@ async def test_get_bars_resample(httpx_mock: HTTPXMock):
         },
     )
     expected_bars = [
-        {FIELDS_TO_NAMES[key]: value for key, value in bar.items() if key != "t"}
+        {BAR_FIELDS_TO_NAMES[key]: value for key, value in bar.items() if key != "t"}
         for bar in expected_bars
     ]
     bars = await ticker.get_bars(now, freq="2min")

@@ -11,7 +11,6 @@ os.environ["ALPACA_API_KEY_ID"] = "key"
 os.environ["ALPACA_API_KEY_SECRET"] = "secret"
 os.environ["ALPACA_STREAMING_URL"] = "ws://localhost:44444"
 
-from quantrion.ticker.alpaca import AlpacaTicker, AlpacaWebSocket
 from quantrion.ticker.ticker import TickerMeta
 from quantrion.utils import SingletonMeta
 
