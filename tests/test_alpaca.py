@@ -17,6 +17,8 @@ from quantrion.utils import MarketDatetime as mdt
 
 def normalize_start_end(start: datetime, end: Optional[datetime] = None):
     start = pd.Timestamp(start.astimezone(pytz.UTC)).ceil(settings.DEFAULT_TIMEFRAME)
+    max_end = mdt.now() - pd.Timedelta(settings.DEFAULT_TIMEFRAME)
+    end = max_end if end is None else min(end, max_end)
     end = mdt.now() if end is None else end
     end = pd.Timestamp(end).floor(settings.DEFAULT_TIMEFRAME)
     return start, end.astimezone(pytz.UTC)
@@ -62,7 +64,7 @@ async def test_get_bars_empty(httpx_mock: HTTPXMock):
             "bars": [],
         },
     )
-    bars = await ticker.get_bars(start, end)
+    bars = await ticker.bars.get(start, end)
     assert bars.shape[0] == 0
 
 
@@ -81,7 +83,7 @@ async def test_get_bars_no_end(httpx_mock: HTTPXMock):
         {BAR_FIELDS_TO_NAMES[key]: value for key, value in bar.items() if key != "t"}
         for bar in expected_bars
     ]
-    bars = await ticker.get_bars(now)
+    bars = await ticker.bars.get(now)
     assert len(bars) == len(expected_bars)
     assert bars.to_dict("records") == expected_bars
 
@@ -99,7 +101,7 @@ async def test_get_bars_update(httpx_mock: HTTPXMock):
             "bars": bars1,
         },
     )
-    result = await ticker.get_bars(start1, end1)
+    result = await ticker.bars.get(start1, end1)
     url = get_bars_url("AAPL", result.index[-1])
     bars2 = generate_bars(result.index[-1])
     httpx_mock.add_response(
@@ -108,9 +110,9 @@ async def test_get_bars_update(httpx_mock: HTTPXMock):
             "bars": bars2,
         },
     )
-    await ticker.get_bars(start1, end1)
-    await ticker.get_bars(start2)
-    actual_bars = await ticker.get_bars(end1, start2)
+    await ticker.bars.get(start1, end1)
+    await ticker.bars.get(start2)
+    actual_bars = await ticker.bars.get(end1, start2)
     assert actual_bars.shape[0] == 60
     assert actual_bars.index[0] == pd.Timestamp(end1).ceil(settings.DEFAULT_TIMEFRAME)
     assert actual_bars.index[-1] == pd.Timestamp(start2).floor(
@@ -131,7 +133,7 @@ async def test_get_bars_update_past(httpx_mock: HTTPXMock):
             "bars": bars1,
         },
     )
-    result = await ticker.get_bars(start1, end1)
+    result = await ticker.bars.get(start1, end1)
     url = get_bars_url("AAPL", start2, result.index[0])
     bars2 = generate_bars(start2, result.index[0])
     httpx_mock.add_response(
@@ -148,9 +150,9 @@ async def test_get_bars_update_past(httpx_mock: HTTPXMock):
             "bars": bars3,
         },
     )
-    await ticker.get_bars(start2)
+    await ticker.bars.get(start2)
 
-    actual_bars = await ticker.get_bars(start2, start1)
+    actual_bars = await ticker.bars.get(start2, start1)
     assert actual_bars.shape[0] == 24 * 60
     assert actual_bars.index[0] == pd.Timestamp(start2).ceil(settings.DEFAULT_TIMEFRAME)
     assert actual_bars.index[-1] == pd.Timestamp(start1).floor(
@@ -180,7 +182,7 @@ async def test_get_bars_next_token(httpx_mock: HTTPXMock):
         {BAR_FIELDS_TO_NAMES[key]: value for key, value in bar.items() if key != "t"}
         for bar in expected_bars
     ]
-    bars = await ticker.get_bars(start)
+    bars = await ticker.bars.get(start)
     assert len(bars) == len(expected_bars)
     assert bars.to_dict("records") == expected_bars
 
@@ -189,7 +191,7 @@ async def test_get_bars_start_gt_end(httpx_mock: HTTPXMock):
     ticker = AlpacaTicker("AAPL")
     start = mdt.now() + timedelta(days=1)
     end = mdt.now()
-    bars = await ticker.get_bars(start, end)
+    bars = await ticker.bars.get(start, end)
     assert bars.shape[0] == 0
 
 
@@ -216,7 +218,7 @@ async def test_get_bars_resample(httpx_mock: HTTPXMock):
         {BAR_FIELDS_TO_NAMES[key]: value for key, value in bar.items() if key != "t"}
         for bar in expected_bars
     ]
-    bars = await ticker.get_bars(now, freq="2min")
+    bars = await ticker.bars.get(now, freq="2min")
     assert bars.index[-1] - bars.index[-2] == pd.Timedelta("2min")
 
 
@@ -231,10 +233,10 @@ async def test_subscribe_bars(start_ws_server: Callable):
             *expected_bars,
         ]
     )
-    await ticker.subscribe_bars()
-    await ticker.subscribe_bars()
+    await ticker.bars.subscribe()
+    await ticker.bars.subscribe()
     await asyncio.sleep(0.1)
-    bars = await ticker.get_bars(start)
+    bars = await ticker.bars.get(start)
     assert bars.shape[0] == len(expected_bars)
     assert received_cmds.value == [
         {"action": "auth", "key": "key", "secret": "secret"},

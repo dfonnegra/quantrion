@@ -13,7 +13,7 @@ import websockets
 from .. import settings
 from ..utils import MarketDatetime as mdt
 from ..utils import SingletonMeta, retry_request
-from .fixtures import BarsFixture
+from .providers import BarsProvider
 from .ticker import Ticker, TickerListProvider
 
 BAR_FIELDS_TO_NAMES = {
@@ -36,6 +36,8 @@ def _data_to_df(data: List[dict], field_to_names: Dict[str, str]) -> pd.DataFram
             columns=columns, index=pd.DatetimeIndex([], tz=mdt.market_tz)
         )
     df = pd.DataFrame(data).rename(columns=field_to_names)
+    rm_cols = df.columns.difference(field_to_names.values())
+    df.drop(rm_cols, axis=1, inplace=True)
     df["start"] = pd.to_datetime(df["start"].values).tz_convert(mdt.market_tz)
     return df.set_index("start")
 
@@ -44,7 +46,7 @@ class AlpacaWebSocket(metaclass=SingletonMeta):
     def __init__(self) -> None:
         self._socket = None
         self._task = None
-        self._subscribed: Dict[str, AlpacaTicker] = dict()
+        self._subscribed: Dict[str, AlpacaBarsProvider] = dict()
 
     async def _subscribe_internal(self, symbols: List[str]):
         if len(symbols) == 0:
@@ -55,13 +57,13 @@ class AlpacaWebSocket(metaclass=SingletonMeta):
             sleep_t = min(sleep_t * 2, 60)
         await self._socket.send(json.dumps({"action": "subscribe", "bars": symbols}))
 
-    async def subscribe(self, ticker: "AlpacaTicker"):
+    async def subscribe(self, bars: "AlpacaBarsProvider"):
         if self._task is None:
             self._task = asyncio.create_task(self.start())
-        if ticker.symbol in self._subscribed:
+        if bars.symbol in self._subscribed:
             return
-        await self._subscribe_internal([ticker.symbol])
-        self._subscribed[ticker.symbol] = ticker
+        await self._subscribe_internal([bars.symbol])
+        self._subscribed[bars.symbol] = bars
 
     async def start(self):
         async for sock in websockets.connect(settings.ALPACA_STREAMING_URL):
@@ -84,22 +86,12 @@ class AlpacaWebSocket(metaclass=SingletonMeta):
                         if (symbol := data.get("S")) is None:
                             continue
                         df = _data_to_df([data], BAR_FIELDS_TO_NAMES)
-                        self._subscribed[symbol].add_bars(df)
+                        self._subscribed[symbol].add(df)
             except websockets.ConnectionClosed:
-                print("authenticating!")
                 continue
 
 
-class AlpacaTicker(Ticker, BarsFixture):
-    _bars_resample_funcs = {
-        **BarsFixture._bars_resample_funcs,
-        "n_trades": "sum",
-    }
-    _bars_fill_values = {
-        **BarsFixture._bars_fill_values,
-        "n_trades": 0,
-    }
-
+class AlpacaBarsProvider(BarsProvider):
     async def _next_page(
         self,
         client: httpx.AsyncClient,
@@ -113,11 +105,11 @@ class AlpacaTicker(Ticker, BarsFixture):
         response.raise_for_status()
         return response
 
-    async def _retrieve_bars(self, start: datetime, end: datetime) -> pd.DataFrame:
+    async def _retrieve(self, start: datetime, end: datetime) -> pd.DataFrame:
         dt = mdt.now() - end
         dt_min = timedelta(minutes=15)
         if settings.DEBUG and dt < dt_min:
-            end = pd.Timestamp(end).floor(settings.DEFAULT_TIMEFRAME) - dt_min
+            end = end - dt_min
         if start >= end:
             return _data_to_df([], BAR_FIELDS_TO_NAMES)
         async with httpx.AsyncClient() as client:
@@ -144,9 +136,28 @@ class AlpacaTicker(Ticker, BarsFixture):
                 rows.extend(data.get("bars", []))
             return _data_to_df(rows, BAR_FIELDS_TO_NAMES)
 
-    async def _subscribe_bars(self) -> None:
+    async def _subscribe(self) -> None:
         ws = AlpacaWebSocket()
         await ws.subscribe(self)
+
+
+class AlpacaTicker(Ticker):
+    _bars_resample_funcs = {
+        **BarsProvider._bars_resample_funcs,
+        "n_trades": "sum",
+    }
+    _bars_fill_values = {
+        **BarsProvider._bars_fill_values,
+        "n_trades": 0,
+    }
+
+    def __init__(self, symbol: str) -> None:
+        super().__init__(symbol)
+        self._bars = AlpacaBarsProvider(symbol)
+
+    @property
+    def bars(self) -> BarsProvider:
+        return self._bars
 
 
 class AlpacaTickerListProvider(TickerListProvider, metaclass=SingletonMeta):

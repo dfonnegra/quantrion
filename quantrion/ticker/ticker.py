@@ -39,5 +39,5 @@ class Ticker(ABC, metaclass=TickerMeta):
 
 class TickerListProvider(ABC):
     @abstractmethod
-    async def list_tickers(self) -> List[str]:
+    async def list_tickers(self) -> List[Ticker]:
         pass

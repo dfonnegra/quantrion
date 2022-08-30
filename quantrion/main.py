@@ -1,15 +1,30 @@
 import asyncio
+import logging
+import logging.config
 from datetime import timedelta
+
+import yaml
 
 from quantrion.ticker.alpaca import AlpacaTicker
 from quantrion.utils import MarketDatetime as mdt
 
+with open("logging.yaml", "r") as log_config_file:
+    config = yaml.load(log_config_file, Loader=yaml.FullLoader)
+
+logger = logging.getLogger()
+logging.config.dictConfig(config)
+logging.getLogger("websockets").addHandler(logging.NullHandler())
+logging.getLogger("websockets").propagate = False
+logging.getLogger("httpx").addHandler(logging.NullHandler())
+logging.getLogger("httpx").propagate = False
+logger.setLevel(logging.DEBUG)
+
 
 async def _run():
     ticker = AlpacaTicker("AAPL")
-    start = mdt.now() - timedelta(days=1)
-    bars = await ticker.get_bars(start)
-    await ticker.subscribe_bars()
+    start = mdt.now() - timedelta(minutes=20)
+    bars = await ticker.bars.get(start)
+    await ticker.bars.subscribe()
     while True:
         await asyncio.sleep(1)
 
