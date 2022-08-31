@@ -22,11 +22,13 @@ logger.setLevel(logging.DEBUG)
 
 async def _run():
     ticker = AlpacaTicker("AAPL")
-    start = mdt.now() - timedelta(minutes=20)
-    bars = await ticker.bars.get(start)
+    start = mdt.now() - timedelta(minutes=30)
+    bars = await ticker.bars.get(start, freq="5min")
+    print(bars)
     await ticker.bars.subscribe()
     while True:
-        await asyncio.sleep(1)
+        new = await ticker.bars.wait_for_next(freq="5min")
+        print(new.to_frame().T)
 
 
 def run():

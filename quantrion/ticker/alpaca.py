@@ -107,9 +107,11 @@ class AlpacaBarsProvider(BarsProvider):
 
     async def _retrieve(self, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
         dt = mdt.now() - end
-        dt_min = pd.Timedelta(14, unit="min")
+        dt_min = pd.Timedelta(15, unit="min")
         if settings.DEBUG and dt < dt_min:
             end = end - dt_min
+        if start >= end:
+            return _data_to_df([], BAR_FIELDS_TO_NAMES)
         async with httpx.AsyncClient() as client:
             url = urljoin(settings.ALPACA_DATA_URL, f"/v2/stocks/{self.symbol}/bars")
             headers = {

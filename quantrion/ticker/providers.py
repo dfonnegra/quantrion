@@ -2,37 +2,13 @@ import asyncio
 import re
 from abc import ABC, abstractmethod
 from time import time
-from typing import Any, Callable, Coroutine, Optional, Protocol, Tuple
+from typing import Optional, Tuple
 
 import pandas as pd
 from pandas.core.window.rolling import Rolling
 
 from ..settings import DEFAULT_TIMEFRAME as DTF
 from ..utils import MarketDatetime as mdt
-
-
-async def _update_data(
-    start: pd.Timestamp,
-    end: pd.Timestamp,
-    current_data: Optional[pd.DataFrame],
-    retriever: Callable[
-        [pd.Timestamp, pd.Timestamp], Coroutine[Any, Any, pd.DataFrame]
-    ],
-):
-    data = current_data
-    if data is None or data.empty:
-        return await retriever(start, end)
-    if start < data.index[0]:
-        new_data = await retriever(start, data.index[0])
-        if data.index[0] in new_data.index:
-            data = data.iloc[1:]
-        data = pd.concat([new_data, data])
-    if end > data.index[-1]:
-        new_data = await retriever(data.index[-1], end)
-        if data.index[-1] in new_data.index:
-            data = data.iloc[:-1]
-        data = pd.concat([data, new_data])
-    return data
 
 
 class BarsProvider(ABC):
@@ -53,6 +29,7 @@ class BarsProvider(ABC):
         self._lock = asyncio.Lock()
         self._subscribed = False
         self._bars = None
+        self._retrieved_range: Optional[Tuple[pd.Timestamp, pd.Timestamp]] = None
         self._new_value_event = asyncio.Event()
 
     @property
@@ -76,16 +53,21 @@ class BarsProvider(ABC):
             if self._subscribed:
                 return
             await self._subscribe()
-            curr_ts = mdt.now().floor(DTF)
-            if self._bars is not None and (last_ts := self._bars.index[-1]) < curr_ts:
-                await self.get(last_ts)
+            curr_ts = mdt.now().floor(DTF) - pd.Timedelta(DTF)
+            if (
+                self._retrieved_range is not None
+                and (curr_end := self._retrieved_range[1]) < curr_ts
+            ):
+                await self._update_data(curr_end, curr_ts)
             self._subscribed = True
 
     def add(self, data: pd.DataFrame):
         if self._bars is None:
             self._bars = data
-            return
-        self._bars = pd.concat([self._bars, data])
+            self._retrieved_range = (data.index[0], data.index[-1])
+        else:
+            self._bars = pd.concat([self._bars, data])
+            self._retrieved_range = (self._retrieved_range[0], data.index[-1])
 
     def notify(self) -> None:
         self._new_value_event.set()
@@ -147,6 +129,26 @@ class BarsProvider(ABC):
         lower = sma - k * std
         return lower, sma, upper
 
+    async def _update_data(
+        self,
+        start: pd.Timestamp,
+        end: pd.Timestamp,
+    ):
+        if self._retrieved_range is None:
+            self._bars = await self._retrieve(start, end)
+            self._retrieved_range = (start, end)
+            return
+        curr_start, curr_end = self._retrieved_range
+        if start < curr_start:
+            new_data = await self._retrieve(start, curr_start - pd.Timedelta(DTF))
+            self._bars = pd.concat([new_data, self._bars])
+            self._retrieved_range = (start, curr_end)
+        if end > curr_end:
+            new_data = await self._retrieve(curr_end + pd.Timedelta(DTF), end)
+            self._bars = pd.concat([self._bars, new_data])
+            self._retrieved_range = (self._retrieved_range[0], end)
+        return
+
     async def _get(
         self, start: pd.Timestamp, end: pd.Timestamp, freq: Optional[str] = None
     ):
@@ -186,21 +188,30 @@ class BarsProvider(ABC):
             return pd.DataFrame(
                 columns=columns, index=pd.DatetimeIndex([], tz=mdt.market_tz)
             )
-        self._bars = await _update_data(start, end, self._bars, self._retrieve)
+        await self._update_data(start, end)
         return await self._get(start, end, freq)
 
     async def wait_for_next(self, freq: Optional[str] = None) -> pd.Series:
-        next_ts = mdt.now().ceil(freq or DTF)
+        next_ts = mdt.now().ceil(freq or DTF).timestamp()
         while True:
             try:
                 await asyncio.wait_for(
                     self._new_value_event.wait(),
-                    timeout=next_ts.timestamp() - time() + 2,
+                    timeout=next_ts - time() + 2,
                     # Wait up to 2 seconds after the current interval is over
                 )
                 if freq is None:
                     return self._bars.iloc[-1]
+                if next_ts - time() > 0:
+                    continue
             except asyncio.TimeoutError:
-                pass
+                next_ts = mdt.now().ceil(freq or DTF).timestamp()
+                if freq is None:
+                    continue
             finally:
                 self._new_value_event.clear()
+            start = mdt.now().floor(freq) - pd.Timedelta(freq)
+            df = await self.get(start, freq=freq)
+            if df.empty:
+                continue
+            return df.iloc[-1]
