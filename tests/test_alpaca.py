@@ -1,6 +1,4 @@
 import asyncio
-import math
-from datetime import datetime, timedelta
 from random import random
 from typing import Callable, Optional
 from urllib.parse import urlencode, urljoin
@@ -15,17 +13,30 @@ from quantrion.ticker.alpaca import BAR_FIELDS_TO_NAMES, AlpacaTicker, AlpacaWeb
 from quantrion.utils import MarketDatetime as mdt
 
 
-def normalize_start_end(start: datetime, end: Optional[datetime] = None):
-    start = pd.Timestamp(start.astimezone(pytz.UTC)).ceil(settings.DEFAULT_TIMEFRAME)
-    max_end = mdt.now() - pd.Timedelta(settings.DEFAULT_TIMEFRAME)
-    end = max_end if end is None else min(end, max_end)
-    end = mdt.now() if end is None else end
-    end = pd.Timestamp(end).floor(settings.DEFAULT_TIMEFRAME)
-    return start, end.astimezone(pytz.UTC)
+def normalize_start_end(
+    start: pd.Timestamp, end: Optional[pd.Timestamp] = None, freq: Optional[str] = None
+):
+    DTF = settings.DEFAULT_TIMEFRAME
+    _freq = freq or DTF
+    start = start.ceil(_freq)
+    max_end = mdt.now().floor(_freq) - pd.Timedelta(DTF)
+    if end is not None:
+        end = end.floor(_freq)
+        if _freq != DTF:
+            end += pd.Timedelta(_freq) - pd.Timedelta(DTF)
+        end = min(end, max_end)
+    else:
+        end = max_end
+    return start.astimezone(pytz.UTC), end.astimezone(pytz.UTC)
 
 
-def get_bars_url(symbol: str, start: datetime, end: Optional[datetime] = None):
-    start, end = normalize_start_end(start, end)
+def get_bars_url(
+    symbol: str,
+    start: pd.Timestamp,
+    end: Optional[pd.Timestamp] = None,
+    freq: Optional[str] = None,
+):
+    start, end = normalize_start_end(start, end, freq)
     params = {
         "timeframe": settings.DEFAULT_TIMEFRAME,
         "start": start.isoformat(),
@@ -35,8 +46,10 @@ def get_bars_url(symbol: str, start: datetime, end: Optional[datetime] = None):
     return url + f"?{urlencode(params)}"
 
 
-def generate_bars(start: datetime, end: Optional[datetime] = None):
-    start, end = normalize_start_end(start, end)
+def generate_bars(
+    start: pd.Timestamp, end: Optional[pd.Timestamp] = None, freq: Optional[str] = None
+):
+    start, end = normalize_start_end(start, end, freq)
     dates = pd.date_range(start, end, freq=settings.DEFAULT_TIMEFRAME)
     return [
         {
@@ -55,7 +68,7 @@ def generate_bars(start: datetime, end: Optional[datetime] = None):
 
 async def test_get_bars_empty(httpx_mock: HTTPXMock):
     ticker = AlpacaTicker("AAPL")
-    start = mdt.now() - timedelta(days=1)
+    start = mdt.now() - pd.Timedelta("1d")
     end = mdt.now()
     url = get_bars_url("AAPL", start, end)
     httpx_mock.add_response(
@@ -70,7 +83,7 @@ async def test_get_bars_empty(httpx_mock: HTTPXMock):
 
 async def test_get_bars_no_end(httpx_mock: HTTPXMock):
     ticker = AlpacaTicker("AAPL")
-    now = mdt.now() - timedelta(minutes=5)
+    now = mdt.now() - pd.Timedelta("5min")
     url = get_bars_url("AAPL", now)
     expected_bars = generate_bars(now)
     httpx_mock.add_response(
@@ -90,9 +103,9 @@ async def test_get_bars_no_end(httpx_mock: HTTPXMock):
 
 async def test_get_bars_update(httpx_mock: HTTPXMock):
     ticker = AlpacaTicker("AAPL")
-    start1 = mdt.now() - timedelta(days=4)
-    end1 = mdt.now() - timedelta(days=3, hours=1)
-    start2 = mdt.now() - timedelta(days=3)
+    start1 = mdt.now() - pd.Timedelta("4d")
+    end1 = mdt.now() - pd.Timedelta("3d1h")
+    start2 = mdt.now() - pd.Timedelta("3d")
     url = get_bars_url("AAPL", start1, end1)
     bars1 = generate_bars(start1, end1)
     httpx_mock.add_response(
@@ -114,17 +127,15 @@ async def test_get_bars_update(httpx_mock: HTTPXMock):
     await ticker.bars.get(start2)
     actual_bars = await ticker.bars.get(end1, start2)
     assert actual_bars.shape[0] == 60
-    assert actual_bars.index[0] == pd.Timestamp(end1).ceil(settings.DEFAULT_TIMEFRAME)
-    assert actual_bars.index[-1] == pd.Timestamp(start2).floor(
-        settings.DEFAULT_TIMEFRAME
-    )
+    assert actual_bars.index[0] == end1.ceil(settings.DEFAULT_TIMEFRAME)
+    assert actual_bars.index[-1] == start2.floor(settings.DEFAULT_TIMEFRAME)
 
 
 async def test_get_bars_update_past(httpx_mock: HTTPXMock):
     ticker = AlpacaTicker("AAPL")
-    start1 = mdt.now() - timedelta(days=3)
-    end1 = mdt.now() - timedelta(days=2)
-    start2 = mdt.now() - timedelta(days=4)
+    start1 = mdt.now() - pd.Timedelta("3d")
+    end1 = mdt.now() - pd.Timedelta("2d")
+    start2 = mdt.now() - pd.Timedelta("4d")
     url = get_bars_url("AAPL", start1, end1)
     bars1 = generate_bars(start1, end1)
     httpx_mock.add_response(
@@ -154,15 +165,13 @@ async def test_get_bars_update_past(httpx_mock: HTTPXMock):
 
     actual_bars = await ticker.bars.get(start2, start1)
     assert actual_bars.shape[0] == 24 * 60
-    assert actual_bars.index[0] == pd.Timestamp(start2).ceil(settings.DEFAULT_TIMEFRAME)
-    assert actual_bars.index[-1] == pd.Timestamp(start1).floor(
-        settings.DEFAULT_TIMEFRAME
-    )
+    assert actual_bars.index[0] == start2.ceil(settings.DEFAULT_TIMEFRAME)
+    assert actual_bars.index[-1] == start1.floor(settings.DEFAULT_TIMEFRAME)
 
 
 async def test_get_bars_next_token(httpx_mock: HTTPXMock):
     ticker = AlpacaTicker("AAPL")
-    start = mdt.now() - timedelta(minutes=5)
+    start = mdt.now() - pd.Timedelta("5min")
     url = get_bars_url("AAPL", start)
     expected_bars = generate_bars(start)
     httpx_mock.add_response(
@@ -189,7 +198,7 @@ async def test_get_bars_next_token(httpx_mock: HTTPXMock):
 
 async def test_get_bars_start_gt_end(httpx_mock: HTTPXMock):
     ticker = AlpacaTicker("AAPL")
-    start = mdt.now() + timedelta(days=1)
+    start = mdt.now() + pd.Timedelta("1d")
     end = mdt.now()
     bars = await ticker.bars.get(start, end)
     assert bars.shape[0] == 0
@@ -197,9 +206,9 @@ async def test_get_bars_start_gt_end(httpx_mock: HTTPXMock):
 
 async def test_get_bars_resample(httpx_mock: HTTPXMock):
     ticker = AlpacaTicker("AAPL")
-    now = mdt.now() - timedelta(minutes=4)
-    url = get_bars_url("AAPL", now)
-    expected_bars = generate_bars(now)
+    now = mdt.now() - pd.Timedelta("6min")
+    url = get_bars_url("AAPL", now, freq="2min")
+    expected_bars = generate_bars(now, freq="2min")
     httpx_mock.add_response(
         url=url,
         status_code=500,
@@ -224,7 +233,7 @@ async def test_get_bars_resample(httpx_mock: HTTPXMock):
 
 async def test_subscribe_bars(start_ws_server: Callable):
     ticker = AlpacaTicker("AAPL")
-    start = mdt.now() - timedelta(minutes=5)
+    start = mdt.now() - pd.Timedelta("5min")
     expected_bars = [{"S": "AAPL", **bar} for bar in generate_bars(start)]
     received_cmds = await start_ws_server(
         [
@@ -235,7 +244,7 @@ async def test_subscribe_bars(start_ws_server: Callable):
     )
     await ticker.bars.subscribe()
     await ticker.bars.subscribe()
-    await asyncio.sleep(0.1)
+    await asyncio.sleep(0.2)
     bars = await ticker.bars.get(start)
     assert bars.shape[0] == len(expected_bars)
     assert received_cmds.value == [

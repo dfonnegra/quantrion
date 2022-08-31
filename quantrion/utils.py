@@ -2,8 +2,6 @@ import asyncio
 import logging
 import traceback
 from abc import ABCMeta
-from datetime import datetime
-from time import time
 
 import httpx
 import pandas as pd
@@ -23,7 +21,7 @@ class MarketDatetime:
     market_tz = pytz.timezone("America/New_York")
 
     @classmethod
-    def from_timestamp(cls, timestamp: float) -> datetime:
+    def from_timestamp(cls, timestamp: float) -> pd.Timestamp:
         """
         Retrieves the datetime from a timestamp localized to the market timezone.
 
@@ -31,36 +29,34 @@ class MarketDatetime:
             timestamp (:obj:`float`): The timestamp in seconds to convert.
 
         Returns:
-            :obj:`datetime`: The datetime localized to the market timezone.
+            :obj:`pd.Timestamp`: The datetime localized to the market timezone.
         """
-        dt = datetime.fromtimestamp(timestamp, tz=pytz.UTC)
+        dt = pd.Timestamp.fromtimestamp(timestamp, tz=pytz.UTC)
         return dt.astimezone(cls.market_tz)
 
     @classmethod
-    def now(cls) -> datetime:
+    def now(cls) -> pd.Timestamp:
         """
         Returns:
-            :obj:`datetime`: The current datetime localized to the market timezone.
+            :obj:`pd.Timestamp`: The current datetime localized to the market timezone.
         """
-        return pytz.UTC.localize(datetime.utcnow()).astimezone(cls.market_tz)
+        return pd.Timestamp.utcnow().astimezone(cls.market_tz)
 
     @classmethod
-    def market_open(cls) -> datetime:
+    def market_open(cls) -> pd.Timestamp:
         """
         Returns:
-            :obj:`datetime`: The market open datetime localized to the market timezone.
+            :obj:`pd.Timestamp`: The market open datetime localized to the market timezone.
         """
-        today = cls.now().date()
-        return cls.market_tz.localize(datetime.combine(today, time(9, 30, 0)))
+        return cls.now().replace(hour=9, minute=30, second=0, microsecond=0)
 
     @classmethod
-    def market_close(cls) -> datetime:
+    def market_close(cls) -> pd.Timestamp:
         """
         Returns:
-            :obj:`datetime`: The market close datetime localized to the market timezone.
+            :obj:`pd.Timestamp`: The market close datetime localized to the market timezone.
         """
-        today = cls.now().date()
-        return cls.market_tz.localize(datetime.combine(today, time(16, 0, 0)))
+        return cls.now().replace(hour=16, minute=0, second=0, microsecond=0)
 
 
 class MaxRetryError(Exception):

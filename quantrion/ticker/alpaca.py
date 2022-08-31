@@ -1,7 +1,5 @@
 import asyncio
-import base64
 import json
-from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from urllib.parse import urljoin
 
@@ -46,7 +44,7 @@ class AlpacaWebSocket(metaclass=SingletonMeta):
     def __init__(self) -> None:
         self._socket = None
         self._task = None
-        self._subscribed: Dict[str, AlpacaBarsProvider] = dict()
+        self._symbol_to_provider: Dict[str, AlpacaBarsProvider] = dict()
 
     async def _subscribe_internal(self, symbols: List[str]):
         if len(symbols) == 0:
@@ -60,10 +58,10 @@ class AlpacaWebSocket(metaclass=SingletonMeta):
     async def subscribe(self, bars: "AlpacaBarsProvider"):
         if self._task is None:
             self._task = asyncio.create_task(self.start())
-        if bars.symbol in self._subscribed:
+        if bars.symbol in self._symbol_to_provider:
             return
         await self._subscribe_internal([bars.symbol])
-        self._subscribed[bars.symbol] = bars
+        self._symbol_to_provider[bars.symbol] = bars
 
     async def start(self):
         async for sock in websockets.connect(settings.ALPACA_STREAMING_URL):
@@ -78,7 +76,7 @@ class AlpacaWebSocket(metaclass=SingletonMeta):
                         }
                     )
                 )
-                symbols = list(self._subscribed.keys())
+                symbols = list(self._symbol_to_provider.keys())
                 await self._subscribe_internal(symbols)
                 async for msg in sock:
                     messages = json.loads(msg)
@@ -86,7 +84,9 @@ class AlpacaWebSocket(metaclass=SingletonMeta):
                         if (symbol := data.get("S")) is None:
                             continue
                         df = _data_to_df([data], BAR_FIELDS_TO_NAMES)
-                        self._subscribed[symbol].add(df)
+                        provider = self._symbol_to_provider[symbol]
+                        provider.add(df)
+                        provider.notify()
             except websockets.ConnectionClosed:
                 continue
 
@@ -105,13 +105,11 @@ class AlpacaBarsProvider(BarsProvider):
         response.raise_for_status()
         return response
 
-    async def _retrieve(self, start: datetime, end: datetime) -> pd.DataFrame:
+    async def _retrieve(self, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
         dt = mdt.now() - end
-        dt_min = timedelta(minutes=15)
+        dt_min = pd.Timedelta(14, unit="min")
         if settings.DEBUG and dt < dt_min:
             end = end - dt_min
-        if start >= end:
-            return _data_to_df([], BAR_FIELDS_TO_NAMES)
         async with httpx.AsyncClient() as client:
             url = urljoin(settings.ALPACA_DATA_URL, f"/v2/stocks/{self.symbol}/bars")
             headers = {
