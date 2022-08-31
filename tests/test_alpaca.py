@@ -115,8 +115,8 @@ async def test_get_bars_update(httpx_mock: HTTPXMock):
         },
     )
     result = await ticker.bars.get(start1, end1)
-    url = get_bars_url("AAPL", result.index[-1])
-    bars2 = generate_bars(result.index[-1])
+    url = get_bars_url("AAPL", result.index[-1] + pd.Timedelta(settings.DEFAULT_TIMEFRAME))
+    bars2 = generate_bars(result.index[-1] + pd.Timedelta(settings.DEFAULT_TIMEFRAME))
     httpx_mock.add_response(
         url=url,
         json={
@@ -145,16 +145,16 @@ async def test_get_bars_update_past(httpx_mock: HTTPXMock):
         },
     )
     result = await ticker.bars.get(start1, end1)
-    url = get_bars_url("AAPL", start2, result.index[0])
-    bars2 = generate_bars(start2, result.index[0])
+    url = get_bars_url("AAPL", start2, result.index[0] - pd.Timedelta(settings.DEFAULT_TIMEFRAME))
+    bars2 = generate_bars(start2, result.index[0] - pd.Timedelta(settings.DEFAULT_TIMEFRAME))
     httpx_mock.add_response(
         url=url,
         json={
             "bars": bars2,
         },
     )
-    url = get_bars_url("AAPL", result.index[-1])
-    bars3 = generate_bars(result.index[-1])
+    url = get_bars_url("AAPL", result.index[-1] + pd.Timedelta(settings.DEFAULT_TIMEFRAME))
+    bars3 = generate_bars(result.index[-1] + pd.Timedelta(settings.DEFAULT_TIMEFRAME))
     httpx_mock.add_response(
         url=url,
         json={
