@@ -9,7 +9,6 @@ import pytz
 import websockets
 
 from .. import settings
-from ..utils import MarketDatetime as mdt
 from ..utils import SingletonMeta, retry_request
 from .base import AssetListProvider, USStock
 from .providers import BarsProvider
@@ -26,17 +25,17 @@ BAR_FIELDS_TO_NAMES = {
 }
 
 
-def _data_to_df(data: List[dict], field_to_names: Dict[str, str]) -> pd.DataFrame:
+def _data_to_df(
+    data: List[dict], field_to_names: Dict[str, str], tz: str
+) -> pd.DataFrame:
     if len(data) == 0:
         columns = set(field_to_names.values())
         columns.remove("start")
-        return pd.DataFrame(
-            columns=columns, index=pd.DatetimeIndex([], tz=mdt.market_tz)
-        )
+        return pd.DataFrame(columns=columns, index=pd.DatetimeIndex([], tz=tz))
     df = pd.DataFrame(data).rename(columns=field_to_names)
     rm_cols = df.columns.difference(field_to_names.values())
     df.drop(rm_cols, axis=1, inplace=True)
-    df["start"] = pd.to_datetime(df["start"].values).tz_convert(mdt.market_tz)
+    df["start"] = pd.to_datetime(df["start"].values).tz_convert(tz)
     return df.set_index("start")
 
 
@@ -83,8 +82,8 @@ class AlpacaWebSocket(metaclass=SingletonMeta):
                     for data in messages:
                         if (symbol := data.get("S")) is None:
                             continue
-                        df = _data_to_df([data], BAR_FIELDS_TO_NAMES)
                         provider = self._symbol_to_provider[symbol]
+                        df = _data_to_df([data], BAR_FIELDS_TO_NAMES, provider.asset.tz)
                         provider.add(df)
                         provider.notify()
             except websockets.ConnectionClosed:
@@ -106,12 +105,12 @@ class AlpacaBarsProvider(BarsProvider):
         return response
 
     async def _retrieve(self, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
-        dt = mdt.now() - end
+        dt = self.asset.dt.now() - end
         dt_min = pd.Timedelta(15, unit="min")
         if settings.DEBUG and dt < dt_min:
             end = end - dt_min
         if start >= end:
-            return _data_to_df([], BAR_FIELDS_TO_NAMES)
+            return _data_to_df([], BAR_FIELDS_TO_NAMES, self.asset.tz)
         async with httpx.AsyncClient() as client:
             url = urljoin(
                 settings.ALPACA_DATA_URL, f"/v2/stocks/{self.asset.symbol}/bars"
@@ -136,7 +135,7 @@ class AlpacaBarsProvider(BarsProvider):
                 )
                 data = response.json()
                 rows.extend(data.get("bars", []))
-            return _data_to_df(rows, BAR_FIELDS_TO_NAMES)
+            return _data_to_df(rows, BAR_FIELDS_TO_NAMES, self.asset.tz)
 
     async def _subscribe(self) -> None:
         ws = AlpacaWebSocket()

@@ -6,7 +6,6 @@ from datetime import timedelta
 import yaml
 
 from quantrion.asset.alpaca import AlpacaUSStock
-from quantrion.utils import MarketDatetime as mdt
 
 with open("logging.yaml", "r") as log_config_file:
     config = yaml.load(log_config_file, Loader=yaml.FullLoader)
@@ -22,7 +21,7 @@ logger.setLevel(logging.DEBUG)
 
 async def _run():
     asset = AlpacaUSStock("AAPL")
-    start = mdt.now() - timedelta(minutes=30)
+    start = asset.dt.now() - timedelta(minutes=30)
     bars = await asset.bars.get(start, freq="5min")
     print(bars)
     await asset.bars.subscribe()

@@ -1,14 +1,14 @@
 from abc import ABC, ABCMeta, abstractmethod
-from datetime import time
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 import pandas as pd
 
-from quantrion.asset.datetime import (
+from .datetime import (
     ComposedRestriction,
     DayOfWeekRestriction,
     TimeRestriction,
     TradingRestriction,
+    AssetDatetime,
 )
 
 
@@ -33,12 +33,13 @@ class Asset(ABC, metaclass=AssetMeta):
     def __init__(
         self,
         symbol: str,
-        tz: str = "UTC",
         restriction: Optional[TradingRestriction] = None,
+        tz: str = "UTC",
     ) -> None:
         self._symbol = symbol
         self._tz = tz
         self._restriction = restriction
+        self._dt = AssetDatetime(tz=tz)
 
     @property
     def symbol(self) -> str:
@@ -62,30 +63,29 @@ class Asset(ABC, metaclass=AssetMeta):
             return self.restriction.is_trading()
         return True
 
-    @property
-    def filter_market_open(self, df: pd.DataFrame) -> pd.DataFrame:
+    def is_trading_filter(self, df: pd.DataFrame) -> pd.DataFrame:
         if not self.is_restricted:
             return df
         return self._restriction.filter(df)
 
+    @property
+    def dt(self) -> AssetDatetime:
+        return self._dt
+
 
 class USStock(Asset):
-    @property
-    def symbol(self) -> str:
-        return self._symbol
-
     def __init__(
         self,
         symbol: str,
     ) -> None:
-        self._tz = "US/Eastern"
+        tz = "US/Eastern"
         restriction = ComposedRestriction(
             [
-                TimeRestriction("16:00", "09:30", self._tz),
-                DayOfWeekRestriction([5, 6], self._tz),
+                TimeRestriction("16:00", "09:30", tz),
+                DayOfWeekRestriction([5, 6], tz),
             ]
         )
-        super().__init__(symbol, restriction)
+        super().__init__(symbol, restriction, tz)
 
     def __str__(self) -> str:
         return f"{self.__class__.__name__}(symbol={self.symbol})"

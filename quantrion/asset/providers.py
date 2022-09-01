@@ -9,7 +9,6 @@ from pandas.core.window.rolling import Rolling
 
 from ..asset.base import Asset
 from ..settings import DEFAULT_TIMEFRAME as DTF
-from ..utils import MarketDatetime as mdt
 
 
 class BarsProvider(ABC):
@@ -54,7 +53,7 @@ class BarsProvider(ABC):
             if self._subscribed:
                 return
             await self._subscribe()
-            curr_ts = mdt.now().floor(DTF) - pd.Timedelta(DTF)
+            curr_ts = self.asset.dt.now().floor(DTF) - pd.Timedelta(DTF)
             if (
                 self._retrieved_range is not None
                 and (curr_end := self._retrieved_range[1]) < curr_ts
@@ -178,7 +177,7 @@ class BarsProvider(ABC):
     ) -> pd.DataFrame:
         _freq = freq or DTF
         start = start.ceil(_freq)
-        max_end = mdt.now().floor(_freq) - pd.Timedelta(DTF)
+        max_end = self.asset.dt.now().floor(_freq) - pd.Timedelta(DTF)
         if end is not None:
             end = end.floor(_freq)
             if _freq != DTF:
@@ -189,14 +188,14 @@ class BarsProvider(ABC):
         if start >= end:
             columns = set(self._bars_resample_funcs.keys())
             return pd.DataFrame(
-                columns=columns, index=pd.DatetimeIndex([], tz=mdt.market_tz)
+                columns=columns, index=pd.DatetimeIndex([], tz=self.asset.tz)
             )
         await self._update_data(start, end)
         data = await self._get(start, end, freq, dropna)
         return data
 
     async def wait_for_next(self, freq: Optional[str] = None) -> pd.Series:
-        next_ts = mdt.now().ceil(freq or DTF).timestamp()
+        next_ts = self.asset.dt.now().ceil(freq or DTF).timestamp()
         while True:
             try:
                 await asyncio.wait_for(
@@ -209,12 +208,12 @@ class BarsProvider(ABC):
                 if next_ts - time() > 0:
                     continue
             except asyncio.TimeoutError:
-                next_ts = mdt.now().ceil(freq or DTF).timestamp()
+                next_ts = self.asset.dt.now().ceil(freq or DTF).timestamp()
                 if freq is None:
                     continue
             finally:
                 self._new_value_event.clear()
-            start = mdt.now().floor(freq) - pd.Timedelta(freq)
+            start = self.asset.dt.now().floor(freq) - pd.Timedelta(freq)
             df = await self.get(start, freq=freq)
             if df.empty:
                 continue

@@ -10,12 +10,16 @@ from pytest_httpx import HTTPXMock
 
 from quantrion import settings
 from quantrion.asset.alpaca import BAR_FIELDS_TO_NAMES, AlpacaUSStock, AlpacaWebSocket
-from quantrion.utils import MarketDatetime as mdt
+from quantrion.asset.datetime import AssetDatetime
 
 
 def normalize_start_end(
-    start: pd.Timestamp, end: Optional[pd.Timestamp] = None, freq: Optional[str] = None
+    start: pd.Timestamp,
+    end: Optional[pd.Timestamp] = None,
+    freq: Optional[str] = None,
+    tz: str = "US/Eastern",
 ):
+    mdt = AssetDatetime(tz)
     DTF = settings.DEFAULT_TIMEFRAME
     _freq = freq or DTF
     start = start.ceil(_freq)
@@ -68,8 +72,8 @@ def generate_bars(
 
 async def test_get_bars_empty(httpx_mock: HTTPXMock):
     stock = AlpacaUSStock("AAPL")
-    end = mdt.now()
-    start = mdt.now() - pd.Timedelta("1h")
+    end = stock.dt.now()
+    start = stock.dt.now() - pd.Timedelta("1h")
     url = get_bars_url("AAPL", start, end)
     httpx_mock.add_response(
         url=url,
@@ -83,7 +87,7 @@ async def test_get_bars_empty(httpx_mock: HTTPXMock):
 
 async def test_get_bars_no_end(httpx_mock: HTTPXMock):
     stock = AlpacaUSStock("AAPL")
-    now = mdt.now() - pd.Timedelta("1h")
+    now = stock.dt.now() - pd.Timedelta("1h")
     url = get_bars_url("AAPL", now)
     expected_bars = generate_bars(now)
     httpx_mock.add_response(
@@ -103,9 +107,9 @@ async def test_get_bars_no_end(httpx_mock: HTTPXMock):
 
 async def test_get_bars_update(httpx_mock: HTTPXMock):
     stock = AlpacaUSStock("AAPL")
-    start1 = mdt.now() - pd.Timedelta("4d")
-    end1 = mdt.now() - pd.Timedelta("3d1h")
-    start2 = mdt.now() - pd.Timedelta("3d")
+    start1 = stock.dt.now() - pd.Timedelta("4d")
+    end1 = stock.dt.now() - pd.Timedelta("3d1h")
+    start2 = stock.dt.now() - pd.Timedelta("3d")
     url = get_bars_url("AAPL", start1, end1)
     bars1 = generate_bars(start1, end1)
     httpx_mock.add_response(
@@ -135,9 +139,9 @@ async def test_get_bars_update(httpx_mock: HTTPXMock):
 
 async def test_get_bars_update_past(httpx_mock: HTTPXMock):
     stock = AlpacaUSStock("AAPL")
-    start1 = mdt.now() - pd.Timedelta("3d")
-    end1 = mdt.now() - pd.Timedelta("2d")
-    start2 = mdt.now() - pd.Timedelta("4d")
+    start1 = stock.dt.now() - pd.Timedelta("3d")
+    end1 = stock.dt.now() - pd.Timedelta("2d")
+    start2 = stock.dt.now() - pd.Timedelta("4d")
     url = get_bars_url("AAPL", start1, end1)
     bars1 = generate_bars(start1, end1)
     httpx_mock.add_response(
@@ -179,7 +183,7 @@ async def test_get_bars_update_past(httpx_mock: HTTPXMock):
 
 async def test_get_bars_next_token(httpx_mock: HTTPXMock):
     stock = AlpacaUSStock("AAPL")
-    start = mdt.now() - pd.Timedelta("5min")
+    start = stock.dt.now() - pd.Timedelta("5min")
     url = get_bars_url("AAPL", start)
     expected_bars = generate_bars(start)
     httpx_mock.add_response(
@@ -206,15 +210,15 @@ async def test_get_bars_next_token(httpx_mock: HTTPXMock):
 
 async def test_get_bars_start_gt_end(httpx_mock: HTTPXMock):
     stock = AlpacaUSStock("AAPL")
-    start = mdt.now() + pd.Timedelta("1d")
-    end = mdt.now()
+    start = stock.dt.now() + pd.Timedelta("1d")
+    end = stock.dt.now()
     bars = await stock.bars.get(start, end)
     assert bars.shape[0] == 0
 
 
 async def test_get_bars_resample(httpx_mock: HTTPXMock):
     stock = AlpacaUSStock("AAPL")
-    now = mdt.now() - pd.Timedelta("6min")
+    now = stock.dt.now() - pd.Timedelta("6min")
     url = get_bars_url("AAPL", now, freq="2min")
     expected_bars = generate_bars(now, freq="2min")
     httpx_mock.add_response(
@@ -241,7 +245,7 @@ async def test_get_bars_resample(httpx_mock: HTTPXMock):
 
 async def test_subscribe_bars(start_ws_server: Callable):
     stock = AlpacaUSStock("AAPL")
-    start = mdt.now() - pd.Timedelta("5min")
+    start = stock.dt.now() - pd.Timedelta("5min")
     expected_bars = [{"S": "AAPL", **bar} for bar in generate_bars(start)]
     received_cmds = await start_ws_server(
         [

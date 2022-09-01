@@ -4,59 +4,11 @@ import traceback
 from abc import ABCMeta
 
 import httpx
-import pandas as pd
-import pytz
 from httpx import RequestError
 
 from . import settings
 
 logger = logging.getLogger(__name__)
-
-
-class MarketDatetime:
-    """
-    Auxuliary class that contains market datetime helpers.
-    """
-
-    market_tz = pytz.timezone("America/New_York")
-
-    @classmethod
-    def from_timestamp(cls, timestamp: float) -> pd.Timestamp:
-        """
-        Retrieves the datetime from a timestamp localized to the market timezone.
-
-        Args:
-            timestamp (:obj:`float`): The timestamp in seconds to convert.
-
-        Returns:
-            :obj:`pd.Timestamp`: The datetime localized to the market timezone.
-        """
-        dt = pd.Timestamp.fromtimestamp(timestamp, tz=pytz.UTC)
-        return dt.astimezone(cls.market_tz)
-
-    @classmethod
-    def now(cls) -> pd.Timestamp:
-        """
-        Returns:
-            :obj:`pd.Timestamp`: The current datetime localized to the market timezone.
-        """
-        return pd.Timestamp.utcnow().astimezone(cls.market_tz)
-
-    @classmethod
-    def market_open(cls) -> pd.Timestamp:
-        """
-        Returns:
-            :obj:`pd.Timestamp`: The market open datetime localized to the market timezone.
-        """
-        return cls.now().replace(hour=9, minute=30, second=0, microsecond=0)
-
-    @classmethod
-    def market_close(cls) -> pd.Timestamp:
-        """
-        Returns:
-            :obj:`pd.Timestamp`: The market close datetime localized to the market timezone.
-        """
-        return cls.now().replace(hour=16, minute=0, second=0, microsecond=0)
 
 
 class MaxRetryError(Exception):
