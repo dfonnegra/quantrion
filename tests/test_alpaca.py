@@ -9,7 +9,11 @@ from httpx import RequestError
 from pytest_httpx import HTTPXMock
 
 from quantrion import settings
-from quantrion.asset.alpaca import BAR_FIELDS_TO_NAMES, AlpacaUSStock, AlpacaWebSocket
+from quantrion.asset.alpaca import (
+    BAR_FIELDS_TO_NAMES,
+    AlpacaUSStock,
+    AlpacaUSStockWebSocket,
+)
 from quantrion.asset.datetime import AssetDatetime
 
 
@@ -263,7 +267,7 @@ async def test_subscribe_bars(start_ws_server: Callable):
         {"action": "auth", "key": "key", "secret": "secret"},
         {"action": "subscribe", "bars": ["AAPL"]},
     ]
-    ws = AlpacaWebSocket()
+    ws = AlpacaUSStockWebSocket()
     ws._task.cancel()
     try:
         await ws._task

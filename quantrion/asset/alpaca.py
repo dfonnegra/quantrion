@@ -1,6 +1,7 @@
 import asyncio
 import json
-from typing import Dict, List, Optional
+from abc import abstractmethod
+from typing import Dict, List, Optional, Tuple, Union
 from urllib.parse import urljoin
 
 import httpx
@@ -10,7 +11,7 @@ import websockets
 
 from .. import settings
 from ..utils import SingletonMeta, retry_request
-from .base import AssetListProvider, USStock
+from .base import AssetListProvider, Crypto, USStock
 from .providers import BarsProvider
 
 BAR_FIELDS_TO_NAMES = {
@@ -40,10 +41,11 @@ def _data_to_df(
 
 
 class AlpacaWebSocket(metaclass=SingletonMeta):
-    def __init__(self) -> None:
+    def __init__(self, url: str) -> None:
         self._socket = None
         self._task = None
         self._symbol_to_provider: Dict[str, AlpacaBarsProvider] = dict()
+        self._url = url
 
     async def _subscribe_internal(self, symbols: List[str]):
         if len(symbols) == 0:
@@ -63,7 +65,7 @@ class AlpacaWebSocket(metaclass=SingletonMeta):
         self._symbol_to_provider[bars.asset.symbol] = bars
 
     async def start(self):
-        async for sock in websockets.connect(settings.ALPACA_STREAMING_URL):
+        async for sock in websockets.connect(self._url):
             self._socket = sock
             try:
                 await sock.send(
@@ -90,6 +92,16 @@ class AlpacaWebSocket(metaclass=SingletonMeta):
                 continue
 
 
+class AlpacaUSStockWebSocket(AlpacaWebSocket):
+    def __init__(self) -> None:
+        super().__init__(urljoin(settings.ALPACA_STREAMING_URL, f"/v2/iex"))
+
+
+class AlpacaCryptoWebSocket(AlpacaWebSocket):
+    def __init__(self) -> None:
+        super().__init__(urljoin(settings.ALPACA_STREAMING_URL, f"/v1beta2/crypto"))
+
+
 class AlpacaBarsProvider(BarsProvider):
     async def _next_page(
         self,
@@ -112,9 +124,7 @@ class AlpacaBarsProvider(BarsProvider):
         if start >= end:
             return _data_to_df([], BAR_FIELDS_TO_NAMES, self.asset.tz)
         async with httpx.AsyncClient() as client:
-            url = urljoin(
-                settings.ALPACA_DATA_URL, f"/v2/stocks/{self.asset.symbol}/bars"
-            )
+            url = self._get_historical_url()
             headers = {
                 "APCA-API-KEY-ID": settings.ALPACA_API_KEY_ID,
                 "APCA-API-SECRET-KEY": settings.ALPACA_API_KEY_SECRET,
@@ -127,22 +137,61 @@ class AlpacaBarsProvider(BarsProvider):
             response = await self._next_page(
                 client, url, params=params, headers=headers
             )
-            data = response.json()
-            rows: list = data.get("bars", []) or []
-            while (token := data.get("next_page_token")) is not None:
+            next_token, rows = self._process_response(response)
+            while next_token is not None:
                 response = await self._next_page(
-                    client, url, params=params, headers=headers, next_token=token
+                    client, url, params=params, headers=headers, next_token=next_token
                 )
-                data = response.json()
-                rows.extend(data.get("bars", []))
+                next_token, new_rows = self._process_response(response)
+                rows.extend(new_rows)
             return _data_to_df(rows, BAR_FIELDS_TO_NAMES, self.asset.tz)
 
+    @abstractmethod
+    def _get_historical_url(self) -> str:
+        pass
+
+    @abstractmethod
+    def _get_web_socket(self) -> AlpacaWebSocket:
+        pass
+
+    @abstractmethod
+    def _process_response(self, response: httpx.Response) -> Tuple[Optional[str], list]:
+        pass
+
     async def _subscribe(self) -> None:
-        ws = AlpacaWebSocket()
+        ws = self._get_web_socket()
         await ws.subscribe(self)
 
 
-class AlpacaUSStock(USStock):
+class AlpacaUSStockBarsProvider(AlpacaBarsProvider):
+    def _get_historical_url(self) -> str:
+        return urljoin(settings.ALPACA_DATA_URL, f"/v2/stocks/{self.asset.symbol}/bars")
+
+    def _get_web_socket(self) -> AlpacaUSStockWebSocket:
+        return AlpacaUSStockWebSocket()
+
+    def _process_response(self, response: httpx.Response) -> Tuple[Optional[str], list]:
+        data = response.json()
+        return data.get("next_page_token"), data.get("bars", []) or []
+
+
+class AlpacaCryptoBarsProvider(AlpacaBarsProvider):
+    def _get_historical_url(self) -> str:
+        return urljoin(
+            settings.ALPACA_DATA_URL,
+            f"/v1beta2/crypto/bars?symbols={self.asset.symbol}",
+        )
+
+    def _get_web_socket(self) -> AlpacaCryptoWebSocket:
+        return AlpacaCryptoWebSocket()
+
+    def _process_response(self, response: httpx.Response) -> Tuple[Optional[str], list]:
+        data: dict = response.json()
+        bars = data.get("bars", {}).get(self.asset.symbol)
+        return data.get("next_page_token"), bars or []
+
+
+class AlpacaMixin:
     _bars_resample_funcs = {
         **BarsProvider._bars_resample_funcs,
         "n_trades": "sum",
@@ -152,13 +201,21 @@ class AlpacaUSStock(USStock):
         "n_trades": 0,
     }
 
-    def __init__(self, symbol: str) -> None:
-        super().__init__(symbol)
-        self._bars = AlpacaBarsProvider(self)
-
     @property
     def bars(self) -> BarsProvider:
         return self._bars
+
+
+class AlpacaUSStock(USStock, AlpacaMixin):
+    def __init__(self, symbol: str) -> None:
+        super().__init__(symbol)
+        self._bars = AlpacaUSStockBarsProvider(self)
+
+
+class AlpacaCrypto(Crypto, AlpacaMixin):
+    def __init__(self, symbol: str) -> None:
+        super().__init__(symbol)
+        self._bars = AlpacaCryptoBarsProvider(self)
 
 
 class AlpacaUSStockListProvider(AssetListProvider, metaclass=SingletonMeta):

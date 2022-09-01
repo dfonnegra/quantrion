@@ -4,11 +4,11 @@ from typing import List, Optional
 import pandas as pd
 
 from .datetime import (
+    AssetDatetime,
     ComposedRestriction,
     DayOfWeekRestriction,
     TimeRestriction,
     TradingRestriction,
-    AssetDatetime,
 )
 
 
@@ -72,6 +72,12 @@ class Asset(ABC, metaclass=AssetMeta):
     def dt(self) -> AssetDatetime:
         return self._dt
 
+    def __str__(self) -> str:
+        return f"{self.__class__.__name__}(symbol={self.symbol})"
+
+    def __repr__(self) -> str:
+        return str(self)
+
 
 class USStock(Asset):
     def __init__(
@@ -87,11 +93,13 @@ class USStock(Asset):
         )
         super().__init__(symbol, restriction, tz)
 
-    def __str__(self) -> str:
-        return f"{self.__class__.__name__}(symbol={self.symbol})"
 
-    def __repr__(self) -> str:
-        return str(self)
+class Crypto(Asset):
+    def __init__(
+        self,
+        symbol: str,
+    ) -> None:
+        super().__init__(symbol, tz="UTC")
 
 
 class AssetListProvider(ABC):
