@@ -11,8 +11,8 @@ import websockets
 from .. import settings
 from ..utils import MarketDatetime as mdt
 from ..utils import SingletonMeta, retry_request
+from .base import AssetListProvider, USStock
 from .providers import BarsProvider
-from .ticker import Ticker, TickerListProvider
 
 BAR_FIELDS_TO_NAMES = {
     "t": "start",
@@ -58,10 +58,10 @@ class AlpacaWebSocket(metaclass=SingletonMeta):
     async def subscribe(self, bars: "AlpacaBarsProvider"):
         if self._task is None:
             self._task = asyncio.create_task(self.start())
-        if bars.symbol in self._symbol_to_provider:
+        if bars.asset.symbol in self._symbol_to_provider:
             return
-        await self._subscribe_internal([bars.symbol])
-        self._symbol_to_provider[bars.symbol] = bars
+        await self._subscribe_internal([bars.asset.symbol])
+        self._symbol_to_provider[bars.asset.symbol] = bars
 
     async def start(self):
         async for sock in websockets.connect(settings.ALPACA_STREAMING_URL):
@@ -113,7 +113,9 @@ class AlpacaBarsProvider(BarsProvider):
         if start >= end:
             return _data_to_df([], BAR_FIELDS_TO_NAMES)
         async with httpx.AsyncClient() as client:
-            url = urljoin(settings.ALPACA_DATA_URL, f"/v2/stocks/{self.symbol}/bars")
+            url = urljoin(
+                settings.ALPACA_DATA_URL, f"/v2/stocks/{self.asset.symbol}/bars"
+            )
             headers = {
                 "APCA-API-KEY-ID": settings.ALPACA_API_KEY_ID,
                 "APCA-API-SECRET-KEY": settings.ALPACA_API_KEY_SECRET,
@@ -141,7 +143,7 @@ class AlpacaBarsProvider(BarsProvider):
         await ws.subscribe(self)
 
 
-class AlpacaTicker(Ticker):
+class AlpacaUSStock(USStock):
     _bars_resample_funcs = {
         **BarsProvider._bars_resample_funcs,
         "n_trades": "sum",
@@ -153,19 +155,19 @@ class AlpacaTicker(Ticker):
 
     def __init__(self, symbol: str) -> None:
         super().__init__(symbol)
-        self._bars = AlpacaBarsProvider(symbol)
+        self._bars = AlpacaBarsProvider(self)
 
     @property
     def bars(self) -> BarsProvider:
         return self._bars
 
 
-class AlpacaTickerListProvider(TickerListProvider, metaclass=SingletonMeta):
+class AlpacaUSStockListProvider(AssetListProvider, metaclass=SingletonMeta):
     def __init__(self) -> None:
         self._cache = None
         super().__init__()
 
-    async def list_tickers(self) -> List[str]:
+    async def list_assets(self) -> List[str]:
         if self._cache is not None:
             return self._cache
         async with httpx.AsyncClient() as client:
@@ -180,7 +182,7 @@ class AlpacaTickerListProvider(TickerListProvider, metaclass=SingletonMeta):
             )
             response.raise_for_status()
             result = [
-                AlpacaTicker(symbol=asset["symbol"])
+                AlpacaUSStock(symbol=asset["symbol"])
                 for asset in response.json()
                 if asset["tradable"] and asset["fractionable"]
             ]

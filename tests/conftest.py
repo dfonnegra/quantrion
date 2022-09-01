@@ -11,7 +11,7 @@ os.environ["ALPACA_API_KEY_ID"] = "key"
 os.environ["ALPACA_API_KEY_SECRET"] = "secret"
 os.environ["ALPACA_STREAMING_URL"] = "ws://localhost:44444"
 
-from quantrion.ticker.ticker import TickerMeta
+from quantrion.asset.base import AssetMeta
 from quantrion.utils import SingletonMeta
 
 
@@ -26,7 +26,7 @@ def event_loop():
 async def run_before_and_after_tests():
     debug_patcher = patch("quantrion.settings.DEBUG", False)
     SingletonMeta._instances = {}
-    for class_ in TickerMeta._classes:
+    for class_ in AssetMeta._classes:
         class_._instances = None
     debug_patcher.start()
     yield

@@ -7,6 +7,7 @@ from typing import Optional, Tuple
 import pandas as pd
 from pandas.core.window.rolling import Rolling
 
+from ..asset.base import Asset
 from ..settings import DEFAULT_TIMEFRAME as DTF
 from ..utils import MarketDatetime as mdt
 
@@ -24,8 +25,8 @@ class BarsProvider(ABC):
         "volume": 0,
     }
 
-    def __init__(self, symbol: str) -> None:
-        self._symbol = symbol
+    def __init__(self, asset: Asset) -> None:
+        self._asset = asset
         self._lock = asyncio.Lock()
         self._subscribed = False
         self._bars = None
@@ -33,8 +34,8 @@ class BarsProvider(ABC):
         self._new_value_event = asyncio.Event()
 
     @property
-    def symbol(self) -> str:
-        return self._symbol
+    def asset(self) -> Asset:
+        return self._asset
 
     @property
     def subscribed(self) -> bool:
@@ -99,7 +100,7 @@ class BarsProvider(ABC):
             ),  # +3 * weeks to account for weekends and public holidays
         }
         start = start - pd.Timedelta(timespan_to_delta[unit], unit=unit)
-        data = await self.get(start, end, freq)
+        data = await self.get(start, end, freq, True)
         return data[candle_key].rolling(n)
 
     async def get_sma(
@@ -150,7 +151,11 @@ class BarsProvider(ABC):
         return
 
     async def _get(
-        self, start: pd.Timestamp, end: pd.Timestamp, freq: Optional[str] = None
+        self,
+        start: pd.Timestamp,
+        end: pd.Timestamp,
+        freq: Optional[str] = None,
+        dropna: bool = True,
     ):
         if freq is None:
             return self._bars.loc[start:end]
@@ -160,18 +165,16 @@ class BarsProvider(ABC):
             self._bars_resample_funcs
         )
         data["price"] /= data["volume"].where(data["volume"] != 0, 1e-9)
-        data = data.fillna(self._bars_fill_values)
-        na_index = data["close"].isna()
-        data["close"] = data["close"].fillna(method="ffill")
-        for col in ["open", "high", "low"]:
-            data.loc[na_index, col] = data["close"]
-        return data.fillna(method="ffill")
+        if not dropna:
+            return data.fillna(self._bars_fill_values)
+        return data.dropna()
 
     async def get(
         self,
         start: pd.Timestamp,
         end: Optional[pd.Timestamp] = None,
         freq: Optional[str] = None,
+        dropna: bool = True,
     ) -> pd.DataFrame:
         _freq = freq or DTF
         start = start.ceil(_freq)
@@ -189,7 +192,8 @@ class BarsProvider(ABC):
                 columns=columns, index=pd.DatetimeIndex([], tz=mdt.market_tz)
             )
         await self._update_data(start, end)
-        return await self._get(start, end, freq)
+        data = await self._get(start, end, freq, dropna)
+        return data
 
     async def wait_for_next(self, freq: Optional[str] = None) -> pd.Series:
         next_ts = mdt.now().ceil(freq or DTF).timestamp()

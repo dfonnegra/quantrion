@@ -2,20 +2,20 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 
-from ..ticker.ticker import Ticker, TickerListProvider
+from ..asset.base import Asset, AssetListProvider
 
 logger = logging.getLogger(__name__)
 
 
 class Strategy(ABC):
-    def __init__(self, tl_provider: TickerListProvider):
+    def __init__(self, tl_provider: AssetListProvider):
         self._tl_provider = tl_provider
         self._tasks = []
 
     async def run(self):
-        tickers = await self._tl_provider.list_tickers()
+        assets = await self._tl_provider.list_assets()
         self._tasks = [
-            asyncio.create_task(self.run_for_ticker(ticker)) for ticker in tickers
+            asyncio.create_task(self.run_for_asset(asset)) for asset in assets
         ]
         await asyncio.gather(*self._tasks)
 
@@ -28,5 +28,5 @@ class Strategy(ABC):
                 pass
 
     @abstractmethod
-    async def run_for_ticker(self, ticker: Ticker):
+    async def run_for_asset(self, asset: Asset):
         pass

@@ -1,10 +1,10 @@
 from typing import Optional, Protocol
 
-from ..ticker.providers import BarsProvider
+from ..asset.providers import BarsProvider
 from .base import Strategy
 
 
-class BollingerTicker(Protocol):
+class BollingerAsset(Protocol):
     bars: BarsProvider
 
 
@@ -19,13 +19,13 @@ class SimpleBollingerStrategy(Strategy):
         self._short_n = short_n
         self._long_n = long_n
 
-    async def run_for_ticker(self, ticker: BollingerTicker):
+    async def run_for_asset(self, asset: BollingerAsset):
         while True:
-            last_bar = await ticker.bars.wait_for_next(self._freq)
-            long_sma = await ticker.bars.get_sma(
+            last_bar = await asset.bars.wait_for_next(self._freq)
+            long_sma = await asset.bars.get_sma(
                 last_bar.index[0], freq=self._freq, n=self._long_n
             )
-            lower, sma, upper = await ticker.bars.get_bollinger_bands(
+            lower, sma, upper = await asset.bars.get_bollinger_bands(
                 last_bar.index[0], freq=self._freq
             )
             if lower[-1] < last_bar["close"][-1] < upper[-1]:

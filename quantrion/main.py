@@ -5,7 +5,7 @@ from datetime import timedelta
 
 import yaml
 
-from quantrion.ticker.alpaca import AlpacaTicker
+from quantrion.asset.alpaca import AlpacaUSStock
 from quantrion.utils import MarketDatetime as mdt
 
 with open("logging.yaml", "r") as log_config_file:
@@ -21,13 +21,13 @@ logger.setLevel(logging.DEBUG)
 
 
 async def _run():
-    ticker = AlpacaTicker("AAPL")
+    asset = AlpacaUSStock("AAPL")
     start = mdt.now() - timedelta(minutes=30)
-    bars = await ticker.bars.get(start, freq="5min")
+    bars = await asset.bars.get(start, freq="5min")
     print(bars)
-    await ticker.bars.subscribe()
+    await asset.bars.subscribe()
     while True:
-        new = await ticker.bars.wait_for_next(freq="5min")
+        new = await asset.bars.wait_for_next(freq="5min")
         print(new.to_frame().T)
 
 

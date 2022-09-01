@@ -1,11 +1,11 @@
-from quantrion.ticker.ticker import Ticker
+from quantrion.asset.base import USStock
 
 
-def test_ticker_cached_per_subclass():
-    class A(Ticker):
+def test_asset_cached_per_subclass():
+    class A(USStock):
         pass
 
-    class B(Ticker):
+    class B(USStock):
         pass
 
     a = A("AAPL")
