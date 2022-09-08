@@ -1,11 +1,11 @@
-from quantrion.asset.base import USStock
+from quantrion.asset.base import BacktestableAsset, TradableAsset
 
 
 def test_asset_cached_per_subclass():
-    class A(USStock):
+    class A(BacktestableAsset):
         pass
 
-    class B(USStock):
+    class B(TradableAsset):
         pass
 
     a = A("AAPL")

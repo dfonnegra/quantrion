@@ -1,8 +1,12 @@
 import asyncio
 import logging
 from abc import ABC, abstractmethod
+from enum import Enum
 
-from ..asset.base import Asset, AssetListProvider
+import pandas as pd
+
+from ..asset.base import Asset
+from ..data.base import AssetListProvider
 
 logger = logging.getLogger(__name__)
 
@@ -29,4 +33,10 @@ class Strategy(ABC):
 
     @abstractmethod
     async def run_for_asset(self, asset: Asset):
-        pass
+        ...
+
+    @abstractmethod
+    async def evaluate_position(
+        self, asset: Asset, last_bar: pd.Series
+    ) -> PositionAction:
+        ...

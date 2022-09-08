@@ -3,6 +3,7 @@ import logging
 import logging.config
 from datetime import timedelta
 
+import pandas as pd
 import yaml
 
 from quantrion.asset.alpaca import AlpacaCrypto, AlpacaUSStock
@@ -22,20 +23,26 @@ logger.setLevel(logging.DEBUG)
 async def _run():
     stock = AlpacaUSStock("AAPL")
     crypto = AlpacaCrypto("BTC/USD")
-    start = stock.dt.now() - timedelta(minutes=30)
+    now = pd.Timestamp.utcnow()
+    start = stock.localize(now) - timedelta(days=2)
     stock_bars = await stock.bars.get(start, freq="2min")
-    start = crypto.dt.now() - timedelta(minutes=30)
+    start = crypto.localize(now) - timedelta(days=2)
     crypto_bars = await crypto.bars.get(start, freq="2min")
     print(stock.symbol)
-    print(stock_bars)
+    print(stock_bars.tail())
     print(crypto.symbol)
-    print(crypto_bars)
+    print(crypto_bars.tail())
     await stock.bars.subscribe()
     await crypto.bars.subscribe()
     while True:
-        # new = await stock.bars.wait_for_next(freq="5min")
-        new = await crypto.bars.wait_for_next(freq="2min")
-        print(new.to_frame().T)
+        last_stock_bar, last_crypto_bar = await asyncio.gather(
+            stock.bars.wait_for_next(freq="2min"),
+            crypto.bars.wait_for_next(freq="2min"),
+        )
+        print(stock.symbol)
+        print(last_stock_bar.to_frame().T)
+        print(crypto.symbol)
+        print(last_crypto_bar.to_frame().T)
 
 
 def run():

@@ -1,12 +1,16 @@
-from abc import ABC, ABCMeta, abstractmethod
-from typing import List, Optional
+from abc import ABC, ABCMeta
+from typing import TYPE_CHECKING, Optional, TypeVar, Union
 
 import pandas as pd
 
-from .datetime import (
-    AssetDatetime,
+if TYPE_CHECKING:
+    from ..data.base import RealTimeProvider, GenericBarsProvider
+    from ..trading.base import TradingProvider
+
+from .restriction import (
     ComposedRestriction,
     DayOfWeekRestriction,
+    EmptyRestriction,
     TimeRestriction,
     TradingRestriction,
 )
@@ -30,16 +34,14 @@ class AssetMeta(ABCMeta):
 
 
 class Asset(ABC, metaclass=AssetMeta):
+    _restriction: TradingRestriction = EmptyRestriction()
+    _tz: str
+
     def __init__(
         self,
         symbol: str,
-        restriction: Optional[TradingRestriction] = None,
-        tz: str = "UTC",
     ) -> None:
         self._symbol = symbol
-        self._tz = tz
-        self._restriction = restriction
-        self._dt = AssetDatetime(tz=tz)
 
     @property
     def symbol(self) -> str:
@@ -49,28 +51,25 @@ class Asset(ABC, metaclass=AssetMeta):
     def restriction(self) -> Optional[TradingRestriction]:
         return self._restriction
 
-    @property
-    def is_restricted(self) -> bool:
-        return self.restriction is not None
+    TS_OR_DF = TypeVar(
+        "TS_OR_DF", pd.Timestamp, pd.Series, pd.DataFrame, pd.DatetimeIndex
+    )
 
-    @property
-    def tz(self) -> str:
-        return self._tz
+    def localize(self, ts_or_df: TS_OR_DF) -> TS_OR_DF:
+        new_tz = getattr(self, "_tz", None)
+        if isinstance(ts_or_df, (pd.DataFrame, pd.Series)):
+            is_naive = ts_or_df.index.tz is None
+        else:
+            is_naive = ts_or_df.tz is None
+        if is_naive and new_tz is None:
+            return ts_or_df
+        if is_naive:
+            return ts_or_df.tz_localize("UTC").tz_convert(new_tz)
+        return ts_or_df.tz_convert(new_tz)
 
     @property
     def is_trading(self) -> bool:
-        if self.is_restricted:
-            return self.restriction.is_trading()
-        return True
-
-    def is_trading_filter(self, df: pd.DataFrame) -> pd.DataFrame:
-        if not self.is_restricted:
-            return df
-        return self._restriction.filter(df)
-
-    @property
-    def dt(self) -> AssetDatetime:
-        return self._dt
+        return self.restriction.is_trading()
 
     def __str__(self) -> str:
         return f"{self.__class__.__name__}(symbol={self.symbol})"
@@ -79,30 +78,20 @@ class Asset(ABC, metaclass=AssetMeta):
         return str(self)
 
 
-class USStock(Asset):
-    def __init__(
-        self,
-        symbol: str,
-    ) -> None:
-        tz = "US/Eastern"
-        restriction = ComposedRestriction(
-            [
-                TimeRestriction("16:00", "09:30", tz),
-                DayOfWeekRestriction([5, 6], tz),
-            ]
-        )
-        super().__init__(symbol, restriction, tz)
+class BacktestableAsset(Asset):
+    bars: "GenericBarsProvider"
 
 
-class Crypto(Asset):
-    def __init__(
-        self,
-        symbol: str,
-    ) -> None:
-        super().__init__(symbol, tz="UTC")
+class TradableAsset(Asset):
+    bars: "RealTimeProvider"
+    trader: "TradingProvider"
 
 
-class AssetListProvider(ABC):
-    @abstractmethod
-    async def list_assets(self) -> List[Asset]:
-        pass
+class USStockMixin:
+    _tz = "US/Eastern"
+    _restriction = ComposedRestriction(
+        [
+            TimeRestriction("16:00", "09:30", _tz),
+            DayOfWeekRestriction([5, 6], _tz),
+        ]
+    )

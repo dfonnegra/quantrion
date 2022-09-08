@@ -16,6 +16,14 @@ class TradingRestriction(ABC):
         pass
 
 
+class EmptyRestriction(TradingRestriction):
+    def is_trading(self) -> bool:
+        return True
+
+    def filter(self, df: pd.DataFrame) -> pd.DataFrame:
+        return df
+
+
 class TimeRestriction(TradingRestriction):
     def __init__(
         self,
@@ -73,32 +81,3 @@ class ComposedRestriction(TradingRestriction):
         for r in self._restrictions:
             df = r.filter(df)
         return df
-
-
-class AssetDatetime:
-    """
-    Auxuliary class that contains market datetime helpers.
-    """
-
-    def __init__(self, tz: str = "UTC"):
-        self._tz = tz
-
-    def from_timestamp(self, timestamp: float) -> pd.Timestamp:
-        """
-        Retrieves the datetime from a timestamp localized to the asset timezone.
-
-        Args:
-            timestamp (:obj:`float`): The timestamp in seconds to convert.
-
-        Returns:
-            :obj:`pd.Timestamp`: The datetime localized to the asset timezone.
-        """
-        dt = pd.Timestamp.fromtimestamp(timestamp, tz=pytz.UTC)
-        return dt.astimezone(self._tz)
-
-    def now(self) -> pd.Timestamp:
-        """
-        Returns:
-            :obj:`pd.Timestamp`: The current datetime localized to the market timezone.
-        """
-        return pd.Timestamp.utcnow().astimezone(self._tz)

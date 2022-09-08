@@ -9,14 +9,12 @@ from httpx import RequestError
 from pytest_httpx import HTTPXMock
 
 from quantrion import settings
-from quantrion.asset.alpaca import (
+from quantrion.asset.alpaca import AlpacaCrypto, AlpacaUSStock
+from quantrion.data.alpaca import (
     BAR_FIELDS_TO_NAMES,
-    AlpacaCrypto,
     AlpacaCryptoWebSocket,
-    AlpacaUSStock,
     AlpacaUSStockWebSocket,
 )
-from quantrion.asset.datetime import AssetDatetime
 
 
 def normalize_start_end(
@@ -25,11 +23,11 @@ def normalize_start_end(
     freq: Optional[str] = None,
     tz: str = "US/Eastern",
 ):
-    mdt = AssetDatetime(tz)
+    now = pd.Timestamp.utcnow().astimezone(tz)
     DTF = settings.DEFAULT_TIMEFRAME
     _freq = freq or DTF
     start = start.ceil(_freq)
-    max_end = mdt.now().floor(_freq) - pd.Timedelta(DTF)
+    max_end = now.floor(_freq) - pd.Timedelta(DTF)
     if end is not None:
         end = end.floor(_freq)
         if _freq != DTF:
@@ -37,7 +35,9 @@ def normalize_start_end(
         end = min(end, max_end)
     else:
         end = max_end
-    return start.astimezone(pytz.UTC), end.astimezone(pytz.UTC)
+    if start.tz is not None:
+        return start.astimezone(pytz.UTC), end.astimezone(pytz.UTC)
+    return start.tz_localize(pytz.UTC), end.tz_localize(pytz.UTC)
 
 
 def get_bars_url(
@@ -62,7 +62,7 @@ def get_crypto_bars_url(
     end: Optional[pd.Timestamp] = None,
     freq: Optional[str] = None,
 ):
-    start, end = normalize_start_end(start, end, freq)
+    start, end = normalize_start_end(start, end, freq, None)
     params = {
         "timeframe": settings.DEFAULT_TIMEFRAME,
         "start": start.isoformat(),
@@ -74,9 +74,12 @@ def get_crypto_bars_url(
 
 
 def generate_bars(
-    start: pd.Timestamp, end: Optional[pd.Timestamp] = None, freq: Optional[str] = None
+    start: pd.Timestamp,
+    end: Optional[pd.Timestamp] = None,
+    freq: Optional[str] = None,
+    tz: str = "US/Eastern",
 ):
-    start, end = normalize_start_end(start, end, freq)
+    start, end = normalize_start_end(start, end, freq, tz)
     dates = pd.date_range(start, end, freq=settings.DEFAULT_TIMEFRAME)
     return [
         {
@@ -95,8 +98,8 @@ def generate_bars(
 
 async def test_get_bars_empty(httpx_mock: HTTPXMock):
     stock = AlpacaUSStock("AAPL")
-    end = stock.dt.now()
-    start = stock.dt.now() - pd.Timedelta("1h")
+    end = stock.localize(pd.Timestamp.utcnow())
+    start = end - pd.Timedelta("1h")
     url = get_bars_url("AAPL", start, end)
     httpx_mock.add_response(
         url=url,
@@ -110,7 +113,7 @@ async def test_get_bars_empty(httpx_mock: HTTPXMock):
 
 async def test_get_bars_no_end(httpx_mock: HTTPXMock):
     stock = AlpacaUSStock("AAPL")
-    now = stock.dt.now() - pd.Timedelta("1h")
+    now = stock.localize(pd.Timestamp.utcnow()) - pd.Timedelta("1h")
     url = get_bars_url("AAPL", now)
     expected_bars = generate_bars(now)
     httpx_mock.add_response(
@@ -130,9 +133,10 @@ async def test_get_bars_no_end(httpx_mock: HTTPXMock):
 
 async def test_get_bars_update(httpx_mock: HTTPXMock):
     stock = AlpacaUSStock("AAPL")
-    start1 = stock.dt.now() - pd.Timedelta("4d")
-    end1 = stock.dt.now() - pd.Timedelta("3d1h")
-    start2 = stock.dt.now() - pd.Timedelta("3d")
+    now = stock.localize(pd.Timestamp.utcnow())
+    start1 = now - pd.Timedelta("4d")
+    end1 = now - pd.Timedelta("3d1h")
+    start2 = now - pd.Timedelta("3d")
     url = get_bars_url("AAPL", start1, end1)
     bars1 = generate_bars(start1, end1)
     httpx_mock.add_response(
@@ -162,9 +166,10 @@ async def test_get_bars_update(httpx_mock: HTTPXMock):
 
 async def test_get_bars_update_past(httpx_mock: HTTPXMock):
     stock = AlpacaUSStock("AAPL")
-    start1 = stock.dt.now() - pd.Timedelta("3d")
-    end1 = stock.dt.now() - pd.Timedelta("2d")
-    start2 = stock.dt.now() - pd.Timedelta("4d")
+    now = stock.localize(pd.Timestamp.utcnow())
+    start1 = now - pd.Timedelta("3d")
+    end1 = now - pd.Timedelta("2d")
+    start2 = now - pd.Timedelta("4d")
     url = get_bars_url("AAPL", start1, end1)
     bars1 = generate_bars(start1, end1)
     httpx_mock.add_response(
@@ -206,7 +211,8 @@ async def test_get_bars_update_past(httpx_mock: HTTPXMock):
 
 async def test_get_bars_next_token(httpx_mock: HTTPXMock):
     stock = AlpacaUSStock("AAPL")
-    start = stock.dt.now() - pd.Timedelta("5min")
+    now = stock.localize(pd.Timestamp.utcnow())
+    start = now - pd.Timedelta("5min")
     url = get_bars_url("AAPL", start)
     expected_bars = generate_bars(start)
     httpx_mock.add_response(
@@ -233,8 +239,8 @@ async def test_get_bars_next_token(httpx_mock: HTTPXMock):
 
 async def test_get_bars_start_gt_end(httpx_mock: HTTPXMock):
     stock = AlpacaUSStock("AAPL")
-    start = stock.dt.now() + pd.Timedelta("1d")
-    end = stock.dt.now()
+    end = stock.localize(pd.Timestamp.utcnow())
+    start = end + pd.Timedelta("1d")
     bars = await stock.bars.get(start, end)
     assert bars.shape[0] == 0
 
@@ -242,9 +248,9 @@ async def test_get_bars_start_gt_end(httpx_mock: HTTPXMock):
 async def test_get_bars_resample(httpx_mock: HTTPXMock):
     symbol = "BTC/USD"
     stock = AlpacaCrypto(symbol)
-    now = stock.dt.now() - pd.Timedelta("6min")
+    now = stock.localize(pd.Timestamp.utcnow()) - pd.Timedelta("6min")
     url = get_crypto_bars_url(symbol, now, freq="2min")
-    expected_bars = generate_bars(now, freq="2min")
+    expected_bars = generate_bars(now, freq="2min", tz=None)
     httpx_mock.add_response(
         url=url,
         status_code=500,
@@ -271,7 +277,8 @@ async def test_get_bars_resample(httpx_mock: HTTPXMock):
 
 async def test_subscribe_bars(start_ws_server: Callable):
     stock = AlpacaUSStock("AAPL")
-    start = stock.dt.now() - pd.Timedelta("5min")
+    now = stock.localize(pd.Timestamp.utcnow())
+    start = now - pd.Timedelta("5min")
     expected_bars = [{"S": "AAPL", **bar} for bar in generate_bars(start)]
     received_cmds = await start_ws_server(
         [
@@ -300,8 +307,9 @@ async def test_subscribe_bars(start_ws_server: Callable):
 async def test_subscribe_bars_crypto(start_ws_server: Callable):
     symbol = "BTC/USD"
     crypto = AlpacaCrypto(symbol)
-    start = crypto.dt.now() - pd.Timedelta("5min")
-    expected_bars = [{"S": symbol, **bar} for bar in generate_bars(start)]
+    now = crypto.localize(pd.Timestamp.utcnow())
+    start = now - pd.Timedelta("5min")
+    expected_bars = [{"S": symbol, **bar} for bar in generate_bars(start, tz=None)]
     received_cmds = await start_ws_server(
         [
             {"T": "success", "msg": "connected"},
