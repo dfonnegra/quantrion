@@ -10,6 +10,7 @@ DEBUG = True
 DEFAULT_TIMEFRAME = "1min"
 DEFAULT_POLL_INTERVAL = 0.001
 MAX_RETRIES = 3
+GLOBAL_MAX_RISK = 1  # 1% of total portfolio value
 
 # Alpaca settings
 ALPACA_API_KEY_ID = os.environ["ALPACA_API_KEY_ID"]

@@ -51,6 +51,7 @@ def get_bars_url(
         "timeframe": settings.DEFAULT_TIMEFRAME,
         "start": start.isoformat(),
         "end": end.isoformat(),
+        "adjustment": "all",
     }
     url = urljoin(settings.ALPACA_DATA_URL, f"/v2/stocks/{symbol}/bars")
     return url + f"?{urlencode(params)}"

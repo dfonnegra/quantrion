@@ -46,15 +46,13 @@ class GenericBarsProvider(ABC):
         return self._asset
 
     def add(self, data: pd.DataFrame):
+        self._new_value_event.set()
         if self._bars is None:
             self._bars = data
             self._retrieved_range = (data.index[0], data.index[-1])
         else:
             self._bars = pd.concat([self._bars, data])
             self._retrieved_range = (self._retrieved_range[0], data.index[-1])
-
-    def notify(self) -> None:
-        self._new_value_event.set()
 
     async def _update_data(
         self,
@@ -123,7 +121,7 @@ class GenericBarsProvider(ABC):
         start = start - pd.Timedelta(timespan_to_delta[unit], unit=unit)
         return start, end
 
-    async def _resample(
+    def _resample(
         self,
         raw_data: pd.DataFrame,
         freq: Optional[str] = None,
@@ -132,7 +130,7 @@ class GenericBarsProvider(ABC):
         data: pd.DataFrame = raw_data.resample(freq).aggregate(
             self._bars_resample_funcs
         )
-        data["price"] = data["price"] / data["volume"]
+        data["price"] = data["price"] / data["volume"].replace(0, 1e-9)
         return data
 
     async def get(
@@ -151,7 +149,7 @@ class GenericBarsProvider(ABC):
         data = self._bars.loc[start:end].copy()
         if freq is None:
             return data
-        data = await self._resample(data, freq)
+        data = self._resample(data, freq)
         if lag == 0 or len(lag_data := data.loc[: start - pd.Timedelta(DTF)]) < lag:
             return data
         start = lag_data.index[-lag]
@@ -270,6 +268,7 @@ class GenericBarsProvider(ABC):
 class RealTimeMixin:
     asset: Asset
     _bars: pd.DataFrame
+    _subscribed: bool
     _new_value_event: asyncio.Event
     _retrieved_range: Tuple[pd.Timestamp, pd.Timestamp]
 
@@ -295,33 +294,32 @@ class RealTimeMixin:
             self._subscribed = True
 
     async def wait_for_next(self, freq: Optional[str] = None) -> pd.Series:
-        now = self.asset.localize(pd.Timestamp.utcnow())
-        next_ts = now.ceil(freq or DTF).timestamp()
+        await self._new_value_event.wait()
+        self._new_value_event.clear()
+        last_bar = self._bars.iloc[-1]
+        if freq is None:
+            return last_bar
+        now: pd.Timestamp = last_bar.name
+        start = now.floor(freq)
+        end = start + pd.Timedelta(freq) - pd.Timedelta(DTF)
         while True:
+            timeout = end.timestamp() - now.timestamp()
             try:
+                if timeout <= 0:
+                    break
                 await asyncio.wait_for(
                     self._new_value_event.wait(),
-                    timeout=next_ts - time() + 2,
+                    timeout=timeout + 2,
                     # Wait up to 2 seconds after the current interval is over
                 )
-                if freq is None:
-                    return self._bars.iloc[-1]
-                if next_ts - time() > 0:
-                    continue
+                last_bar = self._bars.iloc[-1]
+                now = last_bar.name
             except asyncio.TimeoutError:
-                now = self.asset.localize(pd.Timestamp.utcnow())
-                next_ts = now.ceil(freq or DTF).timestamp()
-                if freq is None:
-                    continue
+                break
             finally:
                 self._new_value_event.clear()
-            s = time()
-            now = self.asset.localize(pd.Timestamp.utcnow())
-            start = now.floor(freq) - pd.Timedelta(freq)
-            df = await self.get(start, freq=freq)
-            if df.empty:
-                continue
-            return df.iloc[-1]
+        df = await self.get(start, end, freq=freq)
+        return df.iloc[-1]
 
 
 class RealTimeProvider(GenericBarsProvider, RealTimeMixin):

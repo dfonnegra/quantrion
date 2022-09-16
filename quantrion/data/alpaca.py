@@ -1,7 +1,7 @@
 import asyncio
 import json
 from abc import abstractmethod
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urljoin
 
 import httpx
@@ -88,7 +88,6 @@ class AlpacaWebSocket(metaclass=SingletonMeta):
                         provider = self._symbol_to_provider[symbol]
                         df = _data_to_df([data], BAR_FIELDS_TO_NAMES, provider.asset)
                         provider.add(df)
-                        provider.notify()
             except websockets.ConnectionClosed:
                 continue
 
@@ -145,6 +144,7 @@ class AlpacaBarsProvider(RealTimeProvider):
                 "timeframe": settings.DEFAULT_TIMEFRAME,
                 "start": start.isoformat(),
                 "end": end.isoformat(),
+                **self._get_extra_params(),
             }
             response = await self._next_page(
                 client, url, params=params, headers=headers
@@ -162,6 +162,9 @@ class AlpacaBarsProvider(RealTimeProvider):
     def _get_historical_url(self) -> str:
         pass
 
+    def _get_extra_params(self) -> Dict[str, Any]:
+        return {}
+
     @abstractmethod
     def _get_web_socket(self) -> AlpacaWebSocket:
         pass
@@ -178,6 +181,9 @@ class AlpacaBarsProvider(RealTimeProvider):
 class AlpacaUSStockBarsProvider(AlpacaBarsProvider):
     def _get_historical_url(self) -> str:
         return urljoin(settings.ALPACA_DATA_URL, f"/v2/stocks/{self.asset.symbol}/bars")
+
+    def _get_extra_params(self) -> Dict[str, Any]:
+        return {"adjustment": "all"}
 
     def _get_web_socket(self) -> AlpacaUSStockWebSocket:
         return AlpacaUSStockWebSocket()

@@ -78,10 +78,6 @@ class Asset(ABC, metaclass=AssetMeta):
         return str(self)
 
 
-class BacktestableAsset(Asset):
-    bars: "GenericBarsProvider"
-
-
 class TradableAsset(Asset):
     bars: "RealTimeProvider"
     trader: "TradingProvider"

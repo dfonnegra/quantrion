@@ -35,7 +35,7 @@ class AlpacaUSStockListProvider(AssetListProvider, metaclass=SingletonMeta):
         self._cache = None
         super().__init__()
 
-    async def list_assets(self) -> List[str]:
+    async def list_assets(self) -> List[AlpacaUSStock]:
         if self._cache is not None:
             return self._cache
         async with httpx.AsyncClient() as client:

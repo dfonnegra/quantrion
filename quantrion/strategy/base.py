@@ -5,15 +5,16 @@ from enum import Enum
 
 import pandas as pd
 
-from ..asset.base import Asset
+from ..asset.base import Asset, TradableAsset
 from ..data.base import AssetListProvider
 
 logger = logging.getLogger(__name__)
 
 
 class Strategy(ABC):
-    def __init__(self, tl_provider: AssetListProvider):
+    def __init__(self, tl_provider: AssetListProvider, freq: str = None):
         self._tl_provider = tl_provider
+        self._freq = freq
         self._tasks = []
 
     async def run(self):
@@ -21,7 +22,7 @@ class Strategy(ABC):
         self._tasks = [
             asyncio.create_task(self.run_for_asset(asset)) for asset in assets
         ]
-        await asyncio.gather(*self._tasks)
+        return await asyncio.gather(*self._tasks)
 
     async def stop(self):
         for task in self._tasks:
@@ -31,12 +32,11 @@ class Strategy(ABC):
             except asyncio.CancelledError:
                 pass
 
-    @abstractmethod
-    async def run_for_asset(self, asset: Asset):
-        ...
+    async def run_for_asset(self, asset: TradableAsset):
+        while True:
+            last_bar = await asset.bars.wait_for_next(self._freq)
+            await self.next(asset, last_bar)
 
     @abstractmethod
-    async def evaluate_position(
-        self, asset: Asset, last_bar: pd.Series
-    ) -> PositionAction:
+    async def next(self, asset: Asset, last_bar: pd.Series):
         ...

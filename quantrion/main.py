@@ -39,6 +39,7 @@ async def _run():
             stock.bars.wait_for_next(freq="2min"),
             crypto.bars.wait_for_next(freq="2min"),
         )
+        print(pd.Timestamp.now())
         print(stock.symbol)
         print(last_stock_bar.to_frame().T)
         print(crypto.symbol)
