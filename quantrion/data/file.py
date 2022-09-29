@@ -15,4 +15,4 @@ class CSVAssetListProvider(AssetListProvider):
 
     async def list_assets(self) -> List[AssetSubclass]:
         df = pd.read_csv(self._file_path)
-        return [self._AssetClass(**row.to_dict()) for _, row in df.iterrows()]
+        return [self._AssetClass(symbol) for symbol in df["symbol"]]

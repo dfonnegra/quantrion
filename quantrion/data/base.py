@@ -318,10 +318,6 @@ class RealTimeMixin:
                 break
             finally:
                 self._new_value_event.clear()
-        print("Symbol", self.asset.symbol)
-        print("Normalized (start, end)")
-        print(start, end)
-        print(self._bars.tail())
         df = await self.get(start, end, freq=freq)
         return df.iloc[-1]
 

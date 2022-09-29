@@ -44,8 +44,6 @@ class SupertrendStrategy(Strategy, BasicTradeMixin):
         if not asset.is_trading(last_bar.name):
             return
         start, end = last_bar.name, last_bar.name
-        print("Original (start, end)")
-        print(start, end)
         bars = await asset.bars.get(start, end, self._freq, lag=self._long_n)
         if len(bars) < 2:
             return
@@ -53,18 +51,14 @@ class SupertrendStrategy(Strategy, BasicTradeMixin):
         mean_log_vol = np.log(volume + 1e-3).iloc[:-1].mean()
         std_log_vol = np.log(volume + 1e-3).iloc[:-1].std()
         log_vol = np.log(volume.iloc[-1] + 1e-3)
-        # if log_vol < mean_log_vol + self._volume_k_std * std_log_vol:
-        #     return
+        if log_vol < mean_log_vol + self._volume_k_std * std_log_vol:
+            return
         st = await asset.bars.get_supertrend(
             start, end, self._freq, self._short_n, self._short_k
         )
         lst = await asset.bars.get_supertrend(
             start, end, self._freq, self._long_n, self._long_k
         )
-        print("Supertrend")
-        print(st)
-        print("Long Supertrend")
-        print(lst)
         if lst.empty:
             return
         st_bullish = st.iloc[-1]["bullish"]
