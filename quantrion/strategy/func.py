@@ -19,16 +19,13 @@ def get_risk_order_size(
 
 
 def get_stop_profit_range(
-    asset: TradableAsset,
     side: Side,
     win_to_loss_ratio: float,
     risk: float,
     price: float,
 ) -> Tuple[float, float]:
-    low_price = asset.truncate_price(price - risk)
-    high_price = asset.truncate_price(
-        (price + win_to_loss_ratio * risk) * price / (price - risk)
-    )
+    low_price = price - risk
+    high_price = price + win_to_loss_ratio * risk * price / (price - risk)
     if side == Side.BUY:
         return (low_price, high_price)
     return (high_price, low_price)

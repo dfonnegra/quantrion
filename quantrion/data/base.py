@@ -2,8 +2,7 @@ import asyncio
 import math
 import re
 from abc import ABC, abstractmethod
-from time import time
-from typing import List, Optional, Tuple
+from typing import Awaitable, Callable, List, Optional, Tuple
 
 import pandas as pd
 
@@ -266,10 +265,12 @@ class GenericBarsProvider(ABC):
 
 class RealTimeMixin:
     asset: Asset
+    _lock: asyncio.Lock
     _bars: pd.DataFrame
     _subscribed: bool
     _new_value_event: asyncio.Event
     _retrieved_range: Tuple[pd.Timestamp, pd.Timestamp]
+    _update_data: Callable[[pd.Timestamp, pd.Timestamp], Awaitable[None]]
 
     @abstractmethod
     async def _subscribe(self) -> None:
@@ -317,6 +318,10 @@ class RealTimeMixin:
                 break
             finally:
                 self._new_value_event.clear()
+        print("Symbol", self.asset.symbol)
+        print("Normalized (start, end)")
+        print(start, end)
+        print(self._bars.tail())
         df = await self.get(start, end, freq=freq)
         return df.iloc[-1]
 

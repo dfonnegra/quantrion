@@ -1,5 +1,5 @@
 from abc import ABC
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple, TypeVar, Union
 
 from ..asset.base import TradableAsset
 from .schemas import Account, Order, OrderType, Side, TimeInForce

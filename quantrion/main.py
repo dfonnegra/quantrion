@@ -6,11 +6,9 @@ from datetime import timedelta
 import pandas as pd
 import yaml
 
-from quantrion.asset.alpaca import AlpacaCrypto, AlpacaUSStock
+from quantrion.asset.alpaca import AlpacaUSStock
 from quantrion.data.file import CSVAssetListProvider
 from quantrion.strategy.supertrend import SupertrendStrategy
-from quantrion.trading.alpaca import AlpacaTradingProvider, AlpacaTradingWebSocket
-from quantrion.trading.schemas import OrderType, Side, TimeInForce
 
 with open("logging.yaml", "r") as log_config_file:
     config = yaml.load(log_config_file, Loader=yaml.FullLoader)
@@ -25,7 +23,7 @@ logger.setLevel(logging.DEBUG)
 
 
 async def _run():
-    tl_provider = CSVAssetListProvider("files/good_cryptos.csv", AlpacaCrypto)
+    tl_provider = CSVAssetListProvider("files/good_stocks.csv", AlpacaUSStock)
     strategy = SupertrendStrategy(
         tl_provider,
         freq="2min",

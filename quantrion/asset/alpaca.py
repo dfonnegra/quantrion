@@ -1,14 +1,10 @@
-from typing import List
+from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin
 
 import httpx
 
 from .. import settings
-from ..data.alpaca import (
-    AlpacaBarsProvider,
-    AlpacaCryptoBarsProvider,
-    AlpacaUSStockBarsProvider,
-)
+from ..data.alpaca import AlpacaBarsProvider, AlpacaUSStockBarsProvider
 from ..data.base import AssetListProvider
 from ..trading.alpaca import AlpacaTradingProvider
 from ..utils import SingletonMeta, retry_request
@@ -16,9 +12,26 @@ from .base import TradableAsset, USStockMixin
 
 
 class AlpacaAsset(TradableAsset):
+    _bars: AlpacaBarsProvider
+
     def __init__(self, symbol: str) -> None:
         super().__init__(symbol)
         self._trader = AlpacaTradingProvider(self)
+        self._asset_data: Optional[Dict[str, Any]] = None
+
+    async def get_asset_data(self) -> Dict[str, Any]:
+        if self._asset_data is None:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    urljoin(settings.ALPACA_TRADING_URL, f"v2/assets/{self.symbol}"),
+                    headers={
+                        "APCA-API-KEY-ID": settings.ALPACA_API_KEY_ID,
+                        "APCA-API-SECRET-KEY": settings.ALPACA_API_KEY_SECRET,
+                    },
+                )
+                response.raise_for_status()
+                self._asset_data = response.json()
+        return self._asset_data
 
     @property
     def bars(self) -> AlpacaBarsProvider:
@@ -29,17 +42,10 @@ class AlpacaAsset(TradableAsset):
         return self._trader
 
 
-class AlpacaUSStock(AlpacaAsset, USStockMixin):
+class AlpacaUSStock(USStockMixin, AlpacaAsset):
     def __init__(self, symbol: str) -> None:
         super().__init__(symbol)
         self._bars = AlpacaUSStockBarsProvider(self)
-
-
-class AlpacaCrypto(AlpacaAsset):
-    def __init__(self, symbol: str, min_trade_increment: float) -> None:
-        super().__init__(symbol)
-        self._bars = AlpacaCryptoBarsProvider(self)
-        self._min_trade_increment = min_trade_increment
 
 
 class AlpacaUSStockListProvider(AssetListProvider, metaclass=SingletonMeta):

@@ -9,12 +9,8 @@ from httpx import RequestError
 from pytest_httpx import HTTPXMock
 
 from quantrion import settings
-from quantrion.asset.alpaca import AlpacaCrypto, AlpacaUSStock
-from quantrion.data.alpaca import (
-    BAR_FIELDS_TO_NAMES,
-    AlpacaCryptoWebSocket,
-    AlpacaUSStockWebSocket,
-)
+from quantrion.asset.alpaca import AlpacaUSStock
+from quantrion.data.alpaca import BAR_FIELDS_TO_NAMES, AlpacaUSStockWebSocket
 
 
 def normalize_start_end(
@@ -54,23 +50,6 @@ def get_bars_url(
         "adjustment": "all",
     }
     url = urljoin(settings.ALPACA_DATA_URL, f"/v2/stocks/{symbol}/bars")
-    return url + f"?{urlencode(params)}"
-
-
-def get_crypto_bars_url(
-    symbol: str,
-    start: pd.Timestamp,
-    end: Optional[pd.Timestamp] = None,
-    freq: Optional[str] = None,
-):
-    start, end = normalize_start_end(start, end, freq, None)
-    params = {
-        "timeframe": settings.DEFAULT_TIMEFRAME,
-        "start": start.isoformat(),
-        "end": end.isoformat(),
-        "symbols": symbol,
-    }
-    url = urljoin(settings.ALPACA_DATA_URL, f"/v1beta2/crypto/bars")
     return url + f"?{urlencode(params)}"
 
 
@@ -247,11 +226,11 @@ async def test_get_bars_start_gt_end(httpx_mock: HTTPXMock):
 
 
 async def test_get_bars_resample(httpx_mock: HTTPXMock):
-    symbol = "BTC/USD"
-    stock = AlpacaCrypto(symbol)
+    symbol = "AAPL"
+    stock = AlpacaUSStock(symbol)
     now = stock.localize(pd.Timestamp.utcnow()) - pd.Timedelta("6min")
-    url = get_crypto_bars_url(symbol, now, freq="2min")
-    expected_bars = generate_bars(now, freq="2min", tz=None)
+    url = get_bars_url(symbol, now, freq="2min")
+    expected_bars = generate_bars(now, freq="2min")
     httpx_mock.add_response(
         url=url,
         status_code=500,
@@ -263,9 +242,7 @@ async def test_get_bars_resample(httpx_mock: HTTPXMock):
     httpx_mock.add_response(
         url=url,
         json={
-            "bars": {
-                symbol: expected_bars,
-            },
+            "bars": expected_bars,
         },
     )
     expected_bars = [
@@ -298,36 +275,6 @@ async def test_subscribe_bars(start_ws_server: Callable):
         {"action": "subscribe", "bars": ["AAPL"]},
     ]
     ws = AlpacaUSStockWebSocket()
-    ws._task.cancel()
-    try:
-        await ws._task
-    except asyncio.CancelledError:
-        pass
-
-
-async def test_subscribe_bars_crypto(start_ws_server: Callable):
-    symbol = "BTC/USD"
-    crypto = AlpacaCrypto(symbol)
-    now = crypto.localize(pd.Timestamp.utcnow())
-    start = now - pd.Timedelta("5min")
-    expected_bars = [{"S": symbol, **bar} for bar in generate_bars(start, tz=None)]
-    received_cmds = await start_ws_server(
-        [
-            {"T": "success", "msg": "connected"},
-            {"T": "success", "msg": "authenticated"},
-            *expected_bars,
-        ]
-    )
-    await crypto.bars.subscribe()
-    await crypto.bars.subscribe()
-    await asyncio.sleep(0.2)
-    bars = await crypto.bars.get(start)
-    assert bars.shape[0] == len(expected_bars)
-    assert received_cmds.value == [
-        {"action": "auth", "key": "key", "secret": "secret"},
-        {"action": "subscribe", "bars": [symbol]},
-    ]
-    ws = AlpacaCryptoWebSocket()
     ws._task.cancel()
     try:
         await ws._task

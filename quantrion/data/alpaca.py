@@ -97,11 +97,6 @@ class AlpacaUSStockWebSocket(AlpacaWebSocket):
         super().__init__(urljoin(settings.ALPACA_STREAMING_URL, f"/v2/sip"))
 
 
-class AlpacaCryptoWebSocket(AlpacaWebSocket):
-    def __init__(self) -> None:
-        super().__init__(urljoin(settings.ALPACA_STREAMING_URL, f"/v1beta2/crypto"))
-
-
 class AlpacaBarsProvider(RealTimeProvider):
     _bars_resample_funcs = {
         **RealTimeProvider._bars_resample_funcs,
@@ -187,19 +182,3 @@ class AlpacaUSStockBarsProvider(AlpacaBarsProvider):
     def _process_response(self, response: httpx.Response) -> Tuple[Optional[str], list]:
         data = response.json()
         return data.get("next_page_token"), data.get("bars", []) or []
-
-
-class AlpacaCryptoBarsProvider(AlpacaBarsProvider):
-    def _get_historical_url(self) -> str:
-        return urljoin(
-            settings.ALPACA_DATA_URL,
-            f"/v1beta2/crypto/bars?symbols={self.asset.symbol}",
-        )
-
-    def _get_web_socket(self) -> AlpacaCryptoWebSocket:
-        return AlpacaCryptoWebSocket()
-
-    def _process_response(self, response: httpx.Response) -> Tuple[Optional[str], list]:
-        data: dict = response.json()
-        bars = data.get("bars", {}).get(self.asset.symbol)
-        return data.get("next_page_token"), bars or []

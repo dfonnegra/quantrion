@@ -17,6 +17,7 @@ class OrderType(Enum):
     MARKET = "market"
     STOP = "stop"
     STOP_LIMIT = "stop_limit"
+    OCO = "oco"
 
 
 class TimeInForce(Enum):

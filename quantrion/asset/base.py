@@ -1,10 +1,12 @@
-from abc import ABC, ABCMeta
-from typing import TYPE_CHECKING, Optional, TypeVar, Union
+from abc import ABC, ABCMeta, abstractmethod
+from decimal import Decimal
+from enum import Enum
+from typing import TYPE_CHECKING, Optional, TypeVar
 
 import pandas as pd
 
 if TYPE_CHECKING:
-    from ..data.base import RealTimeProvider, GenericBarsProvider
+    from ..data.base import RealTimeProvider
     from ..trading.base import TradingProvider
 
 from .restriction import (
@@ -80,10 +82,19 @@ class Asset(ABC, metaclass=AssetMeta):
 class TradableAsset(Asset):
     bars: "RealTimeProvider"
     trader: "TradingProvider"
-    _min_trade_increment: float
+    _min_size_increment: float
+    _min_price_increment: float
+
+    def truncate(self, value: float, precision: float) -> float:
+        n_decimals = abs(Decimal(str(value)).as_tuple().exponent)
+        value = int(value / precision) * precision
+        return round(value, n_decimals)
+
+    def truncate_size(self, size: float) -> float:
+        return self.truncate(size, self._min_size_increment)
 
     def truncate_price(self, price: float) -> float:
-        return round(price / self._min_trade_increment) * self._min_trade_increment
+        return self.truncate(price, self._min_price_increment)
 
 
 class USStockMixin:
@@ -94,4 +105,5 @@ class USStockMixin:
             DayOfWeekRestriction([5, 6], _tz),
         ]
     )
-    _min_trade_increment = 0.01
+    _min_size_increment = 1
+    _min_price_increment = 0.01
