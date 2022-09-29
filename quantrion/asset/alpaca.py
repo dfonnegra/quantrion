@@ -4,30 +4,42 @@ from urllib.parse import urljoin
 import httpx
 
 from .. import settings
-from ..data.alpaca import AlpacaCryptoBarsProvider, AlpacaUSStockBarsProvider
+from ..data.alpaca import (
+    AlpacaBarsProvider,
+    AlpacaCryptoBarsProvider,
+    AlpacaUSStockBarsProvider,
+)
 from ..data.base import AssetListProvider
+from ..trading.alpaca import AlpacaTradingProvider
 from ..utils import SingletonMeta, retry_request
 from .base import TradableAsset, USStockMixin
 
 
-class AlpacaUSStock(TradableAsset, USStockMixin):
+class AlpacaAsset(TradableAsset):
+    def __init__(self, symbol: str) -> None:
+        super().__init__(symbol)
+        self._trader = AlpacaTradingProvider(self)
+
+    @property
+    def bars(self) -> AlpacaBarsProvider:
+        return self._bars
+
+    @property
+    def trader(self) -> AlpacaTradingProvider:
+        return self._trader
+
+
+class AlpacaUSStock(AlpacaAsset, USStockMixin):
     def __init__(self, symbol: str) -> None:
         super().__init__(symbol)
         self._bars = AlpacaUSStockBarsProvider(self)
 
-    @property
-    def bars(self) -> AlpacaUSStockBarsProvider:
-        return self._bars
 
-
-class AlpacaCrypto(TradableAsset):
-    def __init__(self, symbol: str) -> None:
+class AlpacaCrypto(AlpacaAsset):
+    def __init__(self, symbol: str, min_trade_increment: float) -> None:
         super().__init__(symbol)
         self._bars = AlpacaCryptoBarsProvider(self)
-
-    @property
-    def bars(self) -> AlpacaCryptoBarsProvider:
-        return self._bars
+        self._min_trade_increment = min_trade_increment
 
 
 class AlpacaUSStockListProvider(AssetListProvider, metaclass=SingletonMeta):

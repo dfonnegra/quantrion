@@ -7,6 +7,10 @@ import pandas as pd
 import yaml
 
 from quantrion.asset.alpaca import AlpacaCrypto, AlpacaUSStock
+from quantrion.data.file import CSVAssetListProvider
+from quantrion.strategy.supertrend import SupertrendStrategy
+from quantrion.trading.alpaca import AlpacaTradingProvider, AlpacaTradingWebSocket
+from quantrion.trading.schemas import OrderType, Side, TimeInForce
 
 with open("logging.yaml", "r") as log_config_file:
     config = yaml.load(log_config_file, Loader=yaml.FullLoader)
@@ -21,29 +25,18 @@ logger.setLevel(logging.DEBUG)
 
 
 async def _run():
-    stock = AlpacaUSStock("AAPL")
-    crypto = AlpacaCrypto("BTC/USD")
-    now = pd.Timestamp.utcnow()
-    start = stock.localize(now) - timedelta(days=2)
-    stock_bars = await stock.bars.get(start, freq="2min")
-    start = crypto.localize(now) - timedelta(days=2)
-    crypto_bars = await crypto.bars.get(start, freq="2min")
-    print(stock.symbol)
-    print(stock_bars.tail())
-    print(crypto.symbol)
-    print(crypto_bars.tail())
-    await stock.bars.subscribe()
-    await crypto.bars.subscribe()
-    while True:
-        last_stock_bar, last_crypto_bar = await asyncio.gather(
-            stock.bars.wait_for_next(freq="2min"),
-            crypto.bars.wait_for_next(freq="2min"),
-        )
-        print(pd.Timestamp.now())
-        print(stock.symbol)
-        print(last_stock_bar.to_frame().T)
-        print(crypto.symbol)
-        print(last_crypto_bar.to_frame().T)
+    tl_provider = CSVAssetListProvider("files/good_cryptos.csv", AlpacaCrypto)
+    strategy = SupertrendStrategy(
+        tl_provider,
+        freq="2min",
+        short_n=15,
+        long_n=40,
+        short_k=1.3,
+        long_k=3.6,
+        risk_multiplier=1.5,
+        win_to_loss_ratio=2,
+    )
+    await strategy.run()
 
 
 def run():

@@ -94,7 +94,7 @@ class AlpacaWebSocket(metaclass=SingletonMeta):
 
 class AlpacaUSStockWebSocket(AlpacaWebSocket):
     def __init__(self) -> None:
-        super().__init__(urljoin(settings.ALPACA_STREAMING_URL, f"/v2/iex"))
+        super().__init__(urljoin(settings.ALPACA_STREAMING_URL, f"/v2/sip"))
 
 
 class AlpacaCryptoWebSocket(AlpacaWebSocket):
@@ -122,10 +122,6 @@ class AlpacaBarsProvider(RealTimeProvider):
         return response
 
     async def _retrieve(self, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
-        dt = self.asset.localize(pd.Timestamp.utcnow()) - end
-        dt_min = pd.Timedelta(15, unit="min")
-        if settings.DEBUG and dt < dt_min:
-            end = end - dt_min
         if start >= end:
             return _data_to_df([], BAR_FIELDS_TO_NAMES, self.asset)
         async with httpx.AsyncClient() as client:

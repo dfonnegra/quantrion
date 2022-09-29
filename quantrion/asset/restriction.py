@@ -8,7 +8,7 @@ import pytz
 
 class TradingRestriction(ABC):
     @abstractmethod
-    def is_trading(self) -> bool:
+    def is_trading(self, at: pd.Timestamp = None) -> bool:
         pass
 
     @abstractmethod
@@ -17,7 +17,7 @@ class TradingRestriction(ABC):
 
 
 class EmptyRestriction(TradingRestriction):
-    def is_trading(self) -> bool:
+    def is_trading(self, at: pd.Timestamp = None) -> bool:
         return True
 
     def filter(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -36,11 +36,12 @@ class TimeRestriction(TradingRestriction):
         self._sgte = start > end
         self._tz = tz
 
-    def is_trading(self) -> bool:
-        now = pd.Timestamp.now(tz=self._tz).time()
+    def is_trading(self, at: pd.Timestamp = None) -> bool:
+        if at is None:
+            at = pd.Timestamp.now(tz=self._tz).time()
         if self._sgte:
-            return self._end <= now <= self._start
-        return (self._end <= now) or (now <= self._start)
+            return self._end <= at <= self._start
+        return (self._end <= at) or (at <= self._start)
 
     def filter(self, df: pd.DataFrame) -> pd.DataFrame:
         if self._sgte:
@@ -57,8 +58,10 @@ class DayOfWeekRestriction(TradingRestriction):
         self._days = days
         self._tz = tz
 
-    def is_trading(self) -> bool:
-        return pd.Timestamp.now(tz=self._tz).dayofweek in self._days
+    def is_trading(self, at: pd.Timestamp = None) -> bool:
+        if at is None:
+            at = pd.Timestamp.now(tz=self._tz)
+        return at.dayofweek in self._days
 
     def filter(self, df: pd.DataFrame) -> pd.DataFrame:
         return df[~df.index.dayofweek.isin(self._days)]
@@ -71,9 +74,9 @@ class ComposedRestriction(TradingRestriction):
     ):
         self._restrictions = restrictions
 
-    def is_trading(self) -> bool:
+    def is_trading(self, at: pd.Timestamp = None) -> bool:
         for r in self._restrictions:
-            if not r.is_trading():
+            if not r.is_trading(at):
                 return False
         return True
 

@@ -5,41 +5,48 @@ from pydantic import BaseModel, Field
 
 
 class Side(Enum):
-    BUY = "BUY"
-    SELL = "SELL"
+    BUY = "buy"
+    SELL = "sell"
+
+    def __invert__(self):
+        return Side.BUY if self == Side.SELL else Side.SELL
 
 
 class OrderType(Enum):
-    LIMIT = "LIMIT"
-    MARKET = "MARKET"
-    STOP = "STOP"
-    STOP_LIMIT = "STOP_LIMIT"
-    RANGE = "RANGE_ORDER"
+    LIMIT = "limit"
+    MARKET = "market"
+    STOP = "stop"
+    STOP_LIMIT = "stop_limit"
 
 
 class TimeInForce(Enum):
-    DAY = "DAY"
-    GTC = "GTC"
-    OPG = "OPG"
-    CLS = "CLS"
+    DAY = "day"
+    GTC = "gtc"
+    OPG = "opg"
+    CLS = "cls"
 
 
 class Status(Enum):
-    PENDING = "PENDING"
-    FILLED = "FILLED"
-    PARTIALLY_FILLED = "PARTIALLY_FILLED"
-    CANCELLED = "CANCELLED"
-    REJECTED = "REJECTED"
+    PENDING = "pending"
+    FILLED = "filled"
+    PARTIALLY_FILLED = "partially_filled"
+    CANCELLED = "cancelled"
+    REJECTED = "rejected"
 
 
 class Order(BaseModel):
     id: str
     symbol: str
-    size: int
+    size: float
     side: Side
     type: OrderType
     tif: TimeInForce
     price: Optional[Union[float, Tuple[float, float]]] = Field(None)
     status: Status
-    filled_size: int
+    filled_size: float
     filled_price: Optional[float] = Field(None)
+
+
+class Account(BaseModel):
+    buying_power: float
+    portfolio_value: float

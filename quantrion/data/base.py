@@ -141,7 +141,7 @@ class GenericBarsProvider(ABC):
         lag: int = 0,
     ) -> pd.DataFrame:
         start, end = self._get_required_start_end(start, end, freq, lag)
-        if start >= end:
+        if start > end:
             columns = set(self._bars_resample_funcs.keys())
             df = pd.DataFrame(columns=columns, index=pd.DatetimeIndex([]))
             return self.asset.localize(df)
@@ -190,7 +190,7 @@ class GenericBarsProvider(ABC):
         freq: str = None,
         n: int = 20,
     ) -> pd.Series:
-        data = (await self.get(start, end, freq, n - 1)).dropna()
+        data = (await self.get(start, end, freq, n)).dropna()
         data["high_low"] = data["high"] - data["low"]
         prev_close = data["close"].shift(1)
         data["high_pc"] = (data["high"] - prev_close).abs()
@@ -207,10 +207,11 @@ class GenericBarsProvider(ABC):
         k: float = 2,
     ) -> pd.DataFrame:
         data = await self.get(start, end, freq, 1)
-        default_result = pd.Series(
+        cols = ["supertrend", "bullish"]
+        default_result = pd.DataFrame(
             [],
+            columns=cols,
             index=pd.DatetimeIndex([]),
-            name="supertrend",
             dtype=float,
         )
         default_result = self.asset.localize(default_result)
@@ -258,9 +259,7 @@ class GenericBarsProvider(ABC):
             )
             prev_row = row
             supertrend.append((curr_supertrend, bullish))
-        df = pd.DataFrame(
-            supertrend, columns=["supertrend", "bullish"], index=data.index
-        )
+        df = pd.DataFrame(supertrend, columns=cols, index=data.index)
         df["bullish"] = df["bullish"].astype(bool)
         return df[df["supertrend"] != 0].loc[start:]
 

@@ -67,9 +67,8 @@ class Asset(ABC, metaclass=AssetMeta):
             return ts_or_df.tz_localize("UTC").tz_convert(new_tz)
         return ts_or_df.tz_convert(new_tz)
 
-    @property
-    def is_trading(self) -> bool:
-        return self.restriction.is_trading()
+    def is_trading(self, at: pd.Timestamp = None) -> bool:
+        return self.restriction.is_trading(at)
 
     def __str__(self) -> str:
         return f"{self.__class__.__name__}(symbol={self.symbol})"
@@ -81,6 +80,10 @@ class Asset(ABC, metaclass=AssetMeta):
 class TradableAsset(Asset):
     bars: "RealTimeProvider"
     trader: "TradingProvider"
+    _min_trade_increment: float
+
+    def truncate_price(self, price: float) -> float:
+        return round(price / self._min_trade_increment) * self._min_trade_increment
 
 
 class USStockMixin:
@@ -91,3 +94,4 @@ class USStockMixin:
             DayOfWeekRestriction([5, 6], _tz),
         ]
     )
+    _min_trade_increment = 0.01

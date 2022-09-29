@@ -1,9 +1,20 @@
 from abc import ABC
-from ctypes import Union
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 from ..asset.base import TradableAsset
-from .schemas import Order, OrderType, Side, TimeInForce
+from .schemas import Account, Order, OrderType, Side, TimeInForce
+
+
+class TradingError(Exception):
+    pass
+
+
+class OrderNotExecuted(TradingError):
+    pass
+
+
+class CancelOrderError(TradingError):
+    pass
 
 
 class TradingProvider(ABC):
@@ -12,7 +23,7 @@ class TradingProvider(ABC):
 
     async def create_order(
         self,
-        size: int,
+        size: float,
         side: Side,
         type: OrderType,
         tif: TimeInForce = TimeInForce.GTC,
@@ -20,7 +31,7 @@ class TradingProvider(ABC):
     ) -> Order:
         ...
 
-    async def cancel_order(self, order_id: str) -> Order:
+    async def cancel_order(self, order_id: str):
         ...
 
     async def wait_for_execution(
@@ -31,8 +42,5 @@ class TradingProvider(ABC):
     async def get_order(self, order_id: str) -> Order:
         ...
 
-    async def get_buying_power(self) -> float:
-        ...
-
-    async def get_portfolio_value(self) -> float:
+    async def get_account(self) -> Account:
         ...

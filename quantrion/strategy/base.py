@@ -19,6 +19,7 @@ class Strategy(ABC):
 
     async def run(self):
         assets = await self._tl_provider.list_assets()
+        logger.info("Running strategy for %s assets", len(assets))
         self._tasks = [
             asyncio.create_task(self.run_for_asset(asset)) for asset in assets
         ]
@@ -34,6 +35,7 @@ class Strategy(ABC):
 
     async def run_for_asset(self, asset: TradableAsset):
         while True:
+            await asset.bars.subscribe()
             last_bar = await asset.bars.wait_for_next(self._freq)
             await self.next(asset, last_bar)
 
